@@ -130,7 +130,7 @@ Fuzzing and sanitizers use nightly Rust:
 
 ```bash
 cargo install cargo-fuzz
-cargo fuzz run scheduler_input -- -runs=1000
+cargo fuzz run --target x86_64-unknown-linux-gnu scheduler_input -- -runs=1000
 cargo miri setup
 cargo miri test --lib -- --test-threads=1
 cargo test -Zbuild-std --lib --target x86_64-unknown-linux-gnu -- --test-threads=1

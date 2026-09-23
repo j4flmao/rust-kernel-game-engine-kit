@@ -1,0 +1,130 @@
+name: engine-ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  linux:
+    name: Linux PAL and engine tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: cargo check --all-targets --all-features
+      - run: cargo test --all-targets --all-features -- --test-threads=1
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+  windows:
+    name: Windows PAL and engine tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: cargo check --all-targets --all-features
+      - run: cargo test --all-targets --all-features -- --test-threads=1
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+  wasm-nostd:
+    name: no_std wasm32 track
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo check --manifest-path kernel_nostd/Cargo.toml --target wasm32-unknown-unknown
+
+  property-and-bench:
+    name: property harness and benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --test property_harness --all-features
+      - run: cargo bench --bench kernel
+      - name: Upload Criterion HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-benchmark-report
+          path: target/criterion/
+          if-no-files-found: error
+
+  fuzz-build:
+    name: libFuzzer target build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo check --manifest-path fuzz/Cargo.toml
+
+  security-audit:
+    name: dependency security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: cargo audit
+      - run: cargo audit
+        working-directory: fuzz
+
+  fuzz-smoke:
+    name: libFuzzer smoke run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - run: cargo fuzz run scheduler_input -- -runs=1000
+        working-directory: fuzz
+
+  miri:
+    name: Miri undefined-behavior gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - run: cargo miri setup
+      - run: cargo miri test --lib -- --test-threads=1
+
+  address-sanitizer:
+    name: AddressSanitizer library tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-unknown-linux-gnu
+          components: rust-src
+      - run: cargo test -Zbuild-std --lib --target x86_64-unknown-linux-gnu -- --test-threads=1
+        env:
+          RUSTFLAGS: "-Zsanitizer=address"

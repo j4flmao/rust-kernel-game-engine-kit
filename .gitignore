@@ -1,0 +1,9 @@
+# Rust build artifacts
+/target
+
+# Editor / OS
+.idea/
+.vscode/
+
+# Local agent scratch
+.tmp/

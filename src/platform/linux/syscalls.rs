@@ -340,10 +340,20 @@ mod tests {
 
         let fd = Fd::open(&path, O_RDONLY | O_CLOEXEC, 0).unwrap();
         let mut prefix = [0u8; 2];
-        assert_eq!(fd.read(&mut prefix).unwrap(), 2);
+        let mut prefix_read = 0;
+        while prefix_read < prefix.len() {
+            let n = fd.read(&mut prefix[prefix_read..]).unwrap();
+            assert!(n > 0, "unexpected EOF while reading prefix");
+            prefix_read += n;
+        }
         assert_eq!(fd.size_bytes().unwrap(), 6);
         let mut suffix = [0u8; 4];
-        assert_eq!(fd.read(&mut suffix).unwrap(), 4);
+        let mut suffix_read = 0;
+        while suffix_read < suffix.len() {
+            let n = fd.read(&mut suffix[suffix_read..]).unwrap();
+            assert!(n > 0, "unexpected EOF while reading suffix");
+            suffix_read += n;
+        }
         assert_eq!(&prefix, b"ab");
         assert_eq!(&suffix, b"cdef");
 

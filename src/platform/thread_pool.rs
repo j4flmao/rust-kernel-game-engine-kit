@@ -147,8 +147,7 @@ fn worker_loop(shared: Arc<Shared>) {
                 // makes `jobs.is_empty() && pending == 0` one coherent
                 // predicate, avoiding a missed wake under strict schedulers
                 // such as Miri.
-                let _completion_guard =
-                    shared.jobs.lock().unwrap_or_else(|p| p.into_inner());
+                let _completion_guard = shared.jobs.lock().unwrap_or_else(|p| p.into_inner());
                 shared.pending.fetch_sub(1, Ordering::AcqRel);
                 // Wake both idle workers and wait_idle().
                 shared.condvar.notify_all();

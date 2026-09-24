@@ -143,10 +143,14 @@ fn worker_loop(shared: Arc<Shared>) {
             if let Some(job) = jobs.pop() {
                 drop(jobs);
                 let result = panic::catch_unwind(panic::AssertUnwindSafe(job));
+                // Keep the completion transition under the queue mutex. This
+                // makes `jobs.is_empty() && pending == 0` one coherent
+                // predicate, avoiding a missed wake under strict schedulers
+                // such as Miri.
+                let _completion_guard =
+                    shared.jobs.lock().unwrap_or_else(|p| p.into_inner());
                 shared.pending.fetch_sub(1, Ordering::AcqRel);
-                // Completion changes the predicate observed by both idle
-                // workers and wait_idle(). Wake all waiters so an idle worker
-                // cannot consume the notification intended for the reporter.
+                // Wake both idle workers and wait_idle().
                 shared.condvar.notify_all();
                 if result.is_err() {
                     eprintln!("[thread-pool] worker job panicked; job was isolated");

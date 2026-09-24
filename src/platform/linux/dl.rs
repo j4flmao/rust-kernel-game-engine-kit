@@ -191,6 +191,7 @@ unsafe impl<F: Send> Sync for Symbol<F> {}
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
+    #[cfg(not(miri))]
     use super::*;
 
     // libc is linked into every glibc binary; dlopen-able by soname on

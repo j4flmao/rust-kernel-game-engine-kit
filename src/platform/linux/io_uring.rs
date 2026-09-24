@@ -273,8 +273,8 @@ impl Drop for IoUring {
     fn drop(&mut self) {
         // SAFETY: mappings and descriptor are exclusively owned.
         unsafe {
-            munmap(self.sq_ring, self.sq_ring_len);
-            munmap(self.cq_ring, self.cq_ring_len);
+            munmap(self.sq_ring.cast(), self.sq_ring_len);
+            munmap(self.cq_ring.cast(), self.cq_ring_len);
             munmap(self.sqes.cast(), self.sqes_len);
             close(self.fd);
         }

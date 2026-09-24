@@ -213,7 +213,7 @@ impl PerfCounter {
             fn _c_read(fd: i32, buf: *mut c_void, count: usize) -> isize;
         }
         // SAFETY: buffer sized to the configured single-counter read format.
-        let n = unsafe { _c_read(self.fd, (&mut value as *mut u64).cast::<u8>(), 8) };
+        let n = unsafe { _c_read(self.fd, (&mut value as *mut u64).cast(), 8) };
         if n < 0 {
             Err((-n) as i32)
         } else {

@@ -118,9 +118,7 @@ impl SyncAuthenticator for HmacSha256Authenticator {
 
 impl Drop for HmacSha256Authenticator {
     fn drop(&mut self) {
-        for byte in &mut self.key {
-            *byte = 0;
-        }
+        self.key.fill(0);
     }
 }
 

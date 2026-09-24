@@ -79,6 +79,9 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
 
+    // Miri does not model the Linux `clock_gettime` FFI; native Linux CI
+    // covers the real monotonic clock path.
+    #[cfg(not(miri))]
     #[test]
     fn monotonic_increases() {
         let t0 = LinuxClock.now_ns();
@@ -87,6 +90,7 @@ mod tests {
         assert!(t1 >= t0, "monotonic clock went backwards");
     }
 
+    #[cfg(not(miri))]
     #[test]
     fn spans_sensible_epoch() {
         let now = LinuxClock.now_ns();

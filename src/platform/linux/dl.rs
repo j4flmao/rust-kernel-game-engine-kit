@@ -195,6 +195,9 @@ mod tests {
 
     // libc is linked into every glibc binary; dlopen-able by soname on
     // common distros (best-effort, skipped when unavailable).
+    // Miri does not model `dlopen`/`dlsym`; the real loader is covered by
+    // the native Linux PAL job instead.
+    #[cfg(not(miri))]
     #[test]
     fn can_load_libc_and_resolve_symbol() {
         let lib = match DynamicLibrary::open("libc.so.6", true) {
@@ -210,12 +213,14 @@ mod tests {
         assert_eq!(len, 6);
     }
 
+    #[cfg(not(miri))]
     #[test]
     fn missing_library_is_an_error() {
         let err = DynamicLibrary::open("libno-such-lib-xyz.so.9", true).unwrap_err();
         let _ = format!("{err}");
     }
 
+    #[cfg(not(miri))]
     #[test]
     fn missing_symbol_is_an_error() {
         let lib = DynamicLibrary::open("libc.so.6", true).unwrap();

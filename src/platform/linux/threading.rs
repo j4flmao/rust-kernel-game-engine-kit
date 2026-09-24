@@ -43,10 +43,10 @@ fn futex_wait(word: &AtomicU32, expected: u32) {
     unsafe {
         syscall(
             sy::FUTEX,
-            ptr as i64,
+            ptr,
             (FUTEX_WAIT | FUTEX_PRIVATE_FLAG) as i64,
             expected as i64,
-            0i64, // no timeout: wake only on FUTEX_WAKE
+            core::ptr::null::<u8>(), // no timeout: wake only on FUTEX_WAKE
             0i64,
             0i64,
         )
@@ -62,7 +62,7 @@ fn futex_wake(word: &AtomicU32, n: u32) {
     unsafe {
         syscall(
             sy::FUTEX,
-            ptr as i64,
+            ptr,
             (FUTEX_WAKE | FUTEX_PRIVATE_FLAG) as i64,
             n as i64,
             0i64,
@@ -138,7 +138,7 @@ pub fn set_thread_affinity(cpus: &[usize]) -> Result<(), i32> {
             sy::SCHED_SETAFFINITY,
             0i64, // pid 0 == calling thread
             CPU_SET_SIZE as i64,
-            mask.as_ptr() as i64,
+            mask.as_ptr(),
             0i64,
             0i64,
             0i64,
@@ -161,7 +161,7 @@ pub fn set_realtime_priority(priority: i32) -> Result<(), i32> {
             sy::SCHED_SETSCHEDULER,
             0i64, // current thread
             SCHED_FIFO as i64,
-            &param as *const i32 as i64,
+            &param as *const i32,
             0i64,
             0i64,
             0i64,

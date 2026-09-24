@@ -44,8 +44,8 @@ fn futex_wait(word: &AtomicU32, expected: u32) {
         syscall(
             sy::FUTEX,
             ptr,
-            (FUTEX_WAIT | FUTEX_PRIVATE_FLAG) as i64,
-            expected as i64,
+            FUTEX_WAIT | FUTEX_PRIVATE_FLAG,
+            expected as i32,
             core::ptr::null::<u8>(), // no timeout: wake only on FUTEX_WAKE
             0i64,
             0i64,
@@ -63,8 +63,8 @@ fn futex_wake(word: &AtomicU32, n: u32) {
         syscall(
             sy::FUTEX,
             ptr,
-            (FUTEX_WAKE | FUTEX_PRIVATE_FLAG) as i64,
-            n as i64,
+            FUTEX_WAKE | FUTEX_PRIVATE_FLAG,
+            n as i32,
             0i64,
             0i64,
             0i64,

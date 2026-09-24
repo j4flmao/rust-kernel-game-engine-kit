@@ -54,7 +54,7 @@ impl core::fmt::Display for X11Error {
 impl core::error::Error for X11Error {}
 
 pub struct X11Library {
-    library: DynamicLibrary,
+    _library: DynamicLibrary,
     open_display: XOpenDisplay,
     close_display: XCloseDisplay,
     default_screen: XDefaultScreen,
@@ -89,7 +89,7 @@ impl X11Library {
             flush: symbol!("XFlush", XFlush),
             pending: symbol!("XPending", XPending),
             next_event: symbol!("XNextEvent", XNextEvent),
-            library,
+            _library: library,
         })
     }
 

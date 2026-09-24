@@ -6,7 +6,7 @@
 //! cache-miss numbers.
 #![allow(unsafe_code)] // justified: PAL FFI boundary
 
-use std::marker::PhantomData;
+use std::{ffi::c_void, marker::PhantomData};
 
 /// Parses a Linux `cpulist` string (`"0-3,7,9-11"`) into a sorted, deduped
 /// list of CPU indices.
@@ -210,7 +210,7 @@ impl PerfCounter {
         let mut value = 0u64;
         extern "C" {
             #[link_name = "read"]
-            fn _c_read(fd: i32, buf: *mut u8, count: usize) -> isize;
+            fn _c_read(fd: i32, buf: *mut c_void, count: usize) -> isize;
         }
         // SAFETY: buffer sized to the configured single-counter read format.
         let n = unsafe { _c_read(self.fd, (&mut value as *mut u64).cast::<u8>(), 8) };

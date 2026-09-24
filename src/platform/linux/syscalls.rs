@@ -24,9 +24,9 @@ pub const SEEK_END: i32 = 2;
 pub const SEEK_SET: i32 = 0;
 
 extern "C" {
-    fn open(path: *const i8, flags: i32, mode: u32) -> i32;
-    fn read(fd: i32, buf: *mut u8, count: usize) -> isize;
-    fn write(fd: i32, buf: *const u8, count: usize) -> isize;
+    fn open(path: *const i8, flags: i32, ...) -> i32;
+    fn read(fd: i32, buf: *mut core::ffi::c_void, count: usize) -> isize;
+    fn write(fd: i32, buf: *const core::ffi::c_void, count: usize) -> isize;
     fn lseek(fd: i32, offset: i64, whence: i32) -> i64;
     fn close(fd: i32) -> i32;
     fn mmap(
@@ -126,7 +126,7 @@ impl Fd {
 
     pub fn read(&self, buf: &mut [u8]) -> Result<usize, SysError> {
         // SAFETY: `buf` is writable for `buf.len()` bytes.
-        let n = unsafe { read(self.raw, buf.as_mut_ptr(), buf.len()) };
+        let n = unsafe { read(self.raw, buf.as_mut_ptr().cast(), buf.len()) };
         if n < 0 {
             return Err(SysError::new("read", None));
         }
@@ -135,7 +135,7 @@ impl Fd {
 
     pub fn write(&self, buf: &[u8]) -> Result<usize, SysError> {
         // SAFETY: `buf` is readable for `buf.len()` bytes.
-        let n = unsafe { write(self.raw, buf.as_ptr(), buf.len()) };
+        let n = unsafe { write(self.raw, buf.as_ptr().cast(), buf.len()) };
         if n < 0 {
             return Err(SysError::new("write", None));
         }

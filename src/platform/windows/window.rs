@@ -1,6 +1,9 @@
 //! Minimal Win32 window lifecycle and message polling.
 #![allow(unsafe_code)]
 
+#[link(name = "user32")]
+unsafe extern "system" {}
+
 use std::ffi::CString;
 
 use crate::subsystems::input::InputEvent;

@@ -7,3 +7,7 @@
 
 # Local agent scratch
 .tmp/
+
+# Node/Husky tooling
+/node_modules/
+/.husky/_/

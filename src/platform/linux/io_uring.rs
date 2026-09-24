@@ -1,7 +1,7 @@
 //! Owned Linux io_uring boundary for asynchronous asset reads.
 #![allow(unsafe_code)]
 
-use std::{io, ptr};
+use std::{ffi::c_void, io, ptr};
 
 const SYS_SETUP: usize = 425;
 const SYS_ENTER: usize = 426;
@@ -10,7 +10,7 @@ const OFF_CQ_RING: i64 = 0x8000_0000;
 const OFF_SQES: i64 = 0x1_0000_0000;
 const ENTER_GETEVENTS: u32 = 1;
 const OP_READ: u8 = 22;
-const MAP_FAILED: *mut u8 = usize::MAX as *mut u8;
+const MAP_FAILED: *mut c_void = usize::MAX as *mut c_void;
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -85,10 +85,17 @@ impl ReadRequest {
 }
 
 unsafe extern "C" {
-    fn syscall(number: usize, ...) -> isize;
+    fn syscall(number: i64, ...) -> i64;
     fn close(fd: i32) -> i32;
-    fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, offset: i64) -> *mut u8;
-    fn munmap(addr: *mut u8, len: usize) -> i32;
+    fn mmap(
+        addr: *mut c_void,
+        len: usize,
+        prot: i32,
+        flags: i32,
+        fd: i32,
+        offset: i64,
+    ) -> *mut c_void;
+    fn munmap(addr: *mut c_void, len: usize) -> i32;
 }
 
 #[derive(Debug)]
@@ -130,7 +137,7 @@ impl IoUring {
         }
         let mut params = Params::default();
         // SAFETY: arguments match the Linux io_uring_setup ABI.
-        let raw = unsafe { syscall(SYS_SETUP, entries, &mut params) };
+        let raw = unsafe { syscall(SYS_SETUP as i64, entries, &mut params) };
         if raw < 0 {
             return Err(IoUringError::Setup(io::Error::from_raw_os_error(
                 (-raw) as i32,
@@ -170,9 +177,9 @@ impl IoUring {
         Ok(Self {
             fd,
             params,
-            sq_ring,
+            sq_ring: sq_ring.cast(),
             sq_ring_len,
-            cq_ring,
+            cq_ring: cq_ring.cast(),
             cq_ring_len,
             sqes: sqes.cast(),
             sqes_len,
@@ -220,7 +227,7 @@ impl IoUring {
         let flags = if wait_for != 0 { ENTER_GETEVENTS } else { 0 }; // SAFETY: descriptor and syscall arguments are owned/validated.
         let raw = unsafe {
             syscall(
-                SYS_ENTER,
+                SYS_ENTER as i64,
                 self.fd,
                 submit,
                 wait_for,
@@ -253,13 +260,13 @@ impl IoUring {
         }
     }
     unsafe fn sq_u32(&self, offset: u32) -> *mut u32 {
-        self.sq_ring.add(offset as usize).cast()
+        unsafe { self.sq_ring.add(offset as usize).cast() }
     }
     unsafe fn cq_u32(&self, offset: u32) -> *mut u32 {
-        self.cq_ring.add(offset as usize).cast()
+        unsafe { self.cq_ring.add(offset as usize).cast() }
     }
     unsafe fn cqes(&self) -> *mut CompletionEntry {
-        self.cq_ring.add(self.params.cq_off.dropped as usize).cast()
+        unsafe { self.cq_ring.add(self.params.cq_off.dropped as usize).cast() }
     }
 }
 impl Drop for IoUring {

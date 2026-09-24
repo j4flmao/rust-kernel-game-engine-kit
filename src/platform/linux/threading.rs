@@ -37,7 +37,7 @@ const FUTEX_PRIVATE_FLAG: i32 = 128;
 /// Atomically waits on a futex word (returns on wake; a spurious
 /// EWOULDBLOCK simply makes us re-check the word in the caller's loop).
 fn futex_wait(word: &AtomicU32, expected: u32) {
-    let ptr = word as *const AtomicU32 as *const u32;
+    let ptr = word as *const AtomicU32 as *mut u32;
     // SAFETY: `ptr` points at a valid u32 aligned per AtomicU32; the kernel
     // only reads it during the wait.
     unsafe {
@@ -46,7 +46,7 @@ fn futex_wait(word: &AtomicU32, expected: u32) {
             ptr,
             FUTEX_WAIT | FUTEX_PRIVATE_FLAG,
             expected as i32,
-            core::ptr::null::<u8>(), // no timeout: wake only on FUTEX_WAKE
+            core::ptr::null_mut::<libc::timespec>(), // no timeout
             0i64,
             0i64,
         )
@@ -57,7 +57,7 @@ fn futex_wait(word: &AtomicU32, expected: u32) {
 /// signed `int`, so the caller must never pass a value whose low 32 bits are
 /// negative (negative counts wake nothing and would deadlock a barrier).
 fn futex_wake(word: &AtomicU32, n: u32) {
-    let ptr = word as *const AtomicU32 as *const u32;
+    let ptr = word as *const AtomicU32 as *mut u32;
     // SAFETY: same shape as `futex_wait`.
     unsafe {
         syscall(

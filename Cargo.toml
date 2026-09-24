@@ -13,6 +13,7 @@ race_trace = []
 [dependencies]
 hmac = "0.12"
 sha2 = "0.10"
+libc = "0.2"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

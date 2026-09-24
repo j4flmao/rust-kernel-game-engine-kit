@@ -106,7 +106,7 @@ jobs:
           tool: cargo-fuzz
       # cargo-fuzz may default to musl on Linux. ASan requires the dynamic
       # GNU target here, so make the target explicit and install its stdlib.
-      - run: cargo fuzz run --target x86_64-unknown-linux-gnu scheduler_input -- -runs=1000
+      - run: cargo fuzz run --target x86_64-unknown-linux-gnu scheduler_input -- -runs=1000 -timeout=10 -max_total_time=60 -rss_limit_mb=2048
         working-directory: fuzz
 
   miri:
@@ -119,6 +119,8 @@ jobs:
           components: miri
       - run: cargo miri setup
       - run: cargo miri test --lib -- --test-threads=1
+        env:
+          MIRIFLAGS: "-Zmiri-disable-isolation"
 
   address-sanitizer:
     name: AddressSanitizer library tests

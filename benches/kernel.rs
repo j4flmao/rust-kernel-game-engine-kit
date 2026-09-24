@@ -46,7 +46,8 @@ fn bench_pool(c: &mut Criterion) {
                         handles.push(pool.alloc(black_box(value as u64)).expect("pool capacity"));
                     }
                     for handle in handles {
-                        black_box(pool.free(handle).expect("valid pool handle"));
+                        let _: () = pool.free(handle).expect("valid pool handle");
+                        black_box(());
                     }
                 });
             },

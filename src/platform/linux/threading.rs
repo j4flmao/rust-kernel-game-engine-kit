@@ -214,6 +214,9 @@ mod tests {
         });
     }
 
+    // Miri does not implement the Linux `sched_setaffinity` syscall; native
+    // Linux CI covers this platform operation.
+    #[cfg(not(miri))]
     #[test]
     fn affinity_pins_to_first_cpu() {
         // Pinning to whatever CPU 0 is always legal for the current thread.

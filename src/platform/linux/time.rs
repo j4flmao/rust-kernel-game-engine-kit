@@ -77,6 +77,7 @@ impl Clock for LinuxClock {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
+    #[cfg(not(miri))]
     use super::*;
 
     // Miri does not model the Linux `clock_gettime` FFI; native Linux CI

@@ -264,6 +264,10 @@ mod tests {
         }
     }
 
+    // Miri intentionally does not model Linux perf_event_open (syscall 298).
+    // Keep this native integration test active on real Linux runners while
+    // leaving the Miri UB suite focused on code it can execute.
+    #[cfg(not(miri))]
     #[test]
     fn perf_counter_opens_and_reads() {
         match PerfCounter::cache_misses() {

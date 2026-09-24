@@ -309,6 +309,9 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    // Miri does not support file-backed `mmap`; native Linux CI covers this
+    // syscall-backed path directly.
+    #[cfg(not(miri))]
     #[test]
     fn fd_size_and_mmap_match_content() {
         let path = temp_path("mmap");

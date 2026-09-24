@@ -1,0 +1,28 @@
+"area: kernel":
+  - changed-files:
+      - any-glob-to-any-file: "src/kernel/**"
+"area: platform":
+  - changed-files:
+      - any-glob-to-any-file: "src/platform/**"
+"area: renderer":
+  - changed-files:
+      - any-glob-to-any-file: "src/subsystems/renderer/**"
+"area: ecs":
+  - changed-files:
+      - any-glob-to-any-file: "src/kernel/ecs/**"
+"area: fuzzing":
+  - changed-files:
+      - any-glob-to-any-file: "fuzz/**"
+"area: no-std":
+  - changed-files:
+      - any-glob-to-any-file: "kernel_nostd/**"
+"area: ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - ".husky/**"
+"area: documentation":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+          - "docs/**"

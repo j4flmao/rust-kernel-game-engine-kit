@@ -1,0 +1,72 @@
+name: Bug report
+description: Report a reproducible defect in the engine or platform layer.
+title: "[Bug]: "
+labels:
+  - bug
+  - triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve the engine. Please remove secrets and private paths from logs before posting.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Give the smallest reliable reproduction.
+      placeholder: |
+        1. Configure ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Commit or version
+      placeholder: e.g. 10f305f
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux native
+        - WSL2
+        - Windows native
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and diagnostics
+      description: Paste focused logs, backtraces, or CI links.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: I removed secrets and sensitive paths from the report.
+          required: true

@@ -1,0 +1,9 @@
+# Default reviewers. Update this after the repository ownership team is
+# finalized; keeping the owner explicit makes review routing predictable.
+* @j4flmao
+
+# High-risk areas should receive owner review.
+src/platform/** @j4flmao
+src/kernel/mem/** @j4flmao
+src/kernel/sync/** @j4flmao
+.github/workflows/** @j4flmao

@@ -9,8 +9,8 @@ use std::sync::{
 
 fuzz_target!(|bytes: &[u8]| {
     // Keep each fuzz case bounded and deterministic. The production executor
-    // is stress-tested separately; this target must never let one generated
-    // case occupy the libFuzzer process indefinitely.
+    // remains in this target; its queue/worker teardown is the behavior under
+    // fuzz, while the workload is capped to keep case cost predictable.
     let executor = ParallelWaveExecutor::new(1);
     let count = Arc::new(AtomicU32::new(0));
     let jobs = bytes

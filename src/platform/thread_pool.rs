@@ -26,7 +26,7 @@ struct Shared {
     max_jobs: usize,
     condvar: Condvar,
     stop: AtomicBool,
-    idle: AtomicUsize,
+    pending: AtomicUsize,
 }
 
 /// A pool of `workers` long-lived threads that execute one-shot jobs.
@@ -52,7 +52,7 @@ impl ThreadPool {
             max_jobs,
             condvar: Condvar::new(),
             stop: AtomicBool::new(false),
-            idle: AtomicUsize::new(workers),
+            pending: AtomicUsize::new(0),
         });
         let mut handles: Vec<JoinHandle<()>> = Vec::new();
         handles
@@ -101,19 +101,18 @@ impl ThreadPool {
             return Err(ThreadPoolError::QueueFull);
         }
         jobs.push(Box::new(job));
+        self.shared.pending.fetch_add(1, Ordering::AcqRel);
         drop(jobs);
         self.shared.condvar.notify_one();
         Ok(())
     }
 
-    /// Blocks until every worker has at least started its run — a cheap
-    /// "last wave drained" marker for the parallel scheduler. Returns false
-    /// when the pool has been told to stop.
+    /// Blocks until every queued job has completed. Returns false when the
+    /// pool has been told to stop.
     pub fn wait_idle(&self) -> bool {
         let mut jobs = self.shared.jobs.lock().unwrap_or_else(|p| p.into_inner());
         loop {
-            let idle = self.shared.idle.load(Ordering::Acquire);
-            if jobs.is_empty() && idle == self.shared_idle_target() {
+            if jobs.is_empty() && self.shared.pending.load(Ordering::Acquire) == 0 {
                 return true;
             }
             if self.shared.stop.load(Ordering::Acquire) {
@@ -125,10 +124,6 @@ impl ThreadPool {
                 .wait(jobs)
                 .unwrap_or_else(|p| p.into_inner());
         }
-    }
-
-    fn shared_idle_target(&self) -> usize {
-        self.handles.len()
     }
 
     /// Number of live worker threads.
@@ -147,9 +142,8 @@ fn worker_loop(shared: Arc<Shared>) {
         loop {
             if let Some(job) = jobs.pop() {
                 drop(jobs);
-                shared.idle.fetch_sub(1, Ordering::AcqRel);
                 let result = panic::catch_unwind(panic::AssertUnwindSafe(job));
-                shared.idle.fetch_add(1, Ordering::AcqRel);
+                shared.pending.fetch_sub(1, Ordering::AcqRel);
                 // Completion changes the predicate observed by both idle
                 // workers and wait_idle(). Wake all waiters so an idle worker
                 // cannot consume the notification intended for the reporter.
@@ -242,6 +236,15 @@ mod tests {
 
         assert!(pool.wait_idle());
         assert_eq!(done.load(Ordering::Acquire), 8);
+    }
+
+    #[test]
+    fn single_worker_drains_short_wave_without_deadlock() {
+        let pool = ThreadPool::new(1);
+        for _ in 0..3 {
+            pool.execute(|| {});
+        }
+        assert!(pool.wait_idle());
     }
 
     #[test]

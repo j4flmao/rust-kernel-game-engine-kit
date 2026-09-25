@@ -142,7 +142,13 @@ fn bench_sync(c: &mut Criterion) {
             payload: vec![0x5a; payload_bytes],
         };
         let auth = HmacSha256Authenticator::new(b"benchmark-only-key").expect("valid key");
-        let nonce = [0x11; 16];
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let nonce = std::array::from_fn(|index| {
+            seed.rotate_left((index as u32) & 63) as u8 ^ (index as u8).wrapping_mul(29)
+        });
         group.throughput(Throughput::Bytes(payload_bytes as u64));
         group.bench_with_input(
             BenchmarkId::new("encode", payload_bytes),

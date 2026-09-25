@@ -74,7 +74,7 @@ jobs:
             /usr/bin/time -v cargo test --lib --tests --all-features -- --test-threads=1 2>"time-${cycle}.log"
             grep -E "Maximum resident set size|Exit status" "time-${cycle}.log" || true
           done
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: soak-memory-telemetry
           path: time-*.log

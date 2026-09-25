@@ -10,8 +10,8 @@ use std::{
 const SYS_SETUP: usize = 425;
 const SYS_ENTER: usize = 426;
 const OFF_SQ_RING: i64 = 0;
-const OFF_CQ_RING: i64 = 0x8000_0000;
-const OFF_SQES: i64 = 0x1_0000_0000;
+const OFF_CQ_RING: i64 = 0x0800_0000;
+const OFF_SQES: i64 = 0x1000_0000;
 const ENTER_GETEVENTS: u32 = 1;
 const OP_READ: u8 = 22;
 const FEAT_SINGLE_MMAP: u32 = 1 << 0;

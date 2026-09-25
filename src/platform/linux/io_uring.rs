@@ -10,6 +10,7 @@ const OFF_CQ_RING: i64 = 0x8000_0000;
 const OFF_SQES: i64 = 0x1_0000_0000;
 const ENTER_GETEVENTS: u32 = 1;
 const OP_READ: u8 = 22;
+const FEAT_SINGLE_MMAP: u32 = 1 << 0;
 const MAP_FAILED: *mut c_void = usize::MAX as *mut c_void;
 
 #[repr(C)]
@@ -132,6 +133,7 @@ pub struct IoUring {
     sq_ring_len: usize,
     cq_ring: *mut u8,
     cq_ring_len: usize,
+    single_mmap: bool,
     sqes: *mut SubmissionEntry,
     sqes_len: usize,
     pending: Vec<PendingRead>,
@@ -157,17 +159,47 @@ impl IoUring {
         let cq_ring_len = params.cq_off.dropped as usize
             + params.cq_entries as usize * core::mem::size_of::<CompletionEntry>();
         let sqes_len = params.sq_entries as usize * core::mem::size_of::<SubmissionEntry>();
-        // SAFETY: kernel-provided offsets/sizes describe the three shared mappings.
-        let sq_ring = unsafe { mmap(ptr::null_mut(), sq_ring_len, 3, 1, fd, OFF_SQ_RING) };
-        let cq_ring = unsafe { mmap(ptr::null_mut(), cq_ring_len, 3, 1, fd, OFF_CQ_RING) };
+        // IORING_FEAT_SINGLE_MMAP means SQ and CQ share one mapping. The
+        // kernel still exposes separate offsets inside that mapping, so the
+        // ring pointers intentionally remain the same base address here.
+        let single_mmap = params.features & FEAT_SINGLE_MMAP != 0;
+        let shared_ring_len = sq_ring_len.max(cq_ring_len);
+        // SAFETY: kernel-provided offsets/sizes describe the shared mappings.
+        let sq_ring = unsafe {
+            mmap(
+                ptr::null_mut(),
+                if single_mmap {
+                    shared_ring_len
+                } else {
+                    sq_ring_len
+                },
+                3,
+                1,
+                fd,
+                OFF_SQ_RING,
+            )
+        };
+        let cq_ring = if single_mmap {
+            sq_ring
+        } else {
+            // SAFETY: the CQ mapping is a distinct kernel-provided region.
+            unsafe { mmap(ptr::null_mut(), cq_ring_len, 3, 1, fd, OFF_CQ_RING) }
+        };
         let sqes = unsafe { mmap(ptr::null_mut(), sqes_len, 3, 1, fd, OFF_SQES) };
         if [sq_ring, cq_ring, sqes].contains(&MAP_FAILED) {
             if sq_ring != MAP_FAILED {
                 unsafe {
-                    munmap(sq_ring, sq_ring_len);
+                    munmap(
+                        sq_ring,
+                        if single_mmap {
+                            shared_ring_len
+                        } else {
+                            sq_ring_len
+                        },
+                    );
                 }
             }
-            if cq_ring != MAP_FAILED {
+            if !single_mmap && cq_ring != MAP_FAILED {
                 unsafe {
                     munmap(cq_ring, cq_ring_len);
                 }
@@ -194,9 +226,14 @@ impl IoUring {
             fd,
             params,
             sq_ring: sq_ring.cast(),
-            sq_ring_len,
+            sq_ring_len: if single_mmap {
+                shared_ring_len
+            } else {
+                sq_ring_len
+            },
             cq_ring: cq_ring.cast(),
-            cq_ring_len,
+            cq_ring_len: if single_mmap { 0 } else { cq_ring_len },
+            single_mmap,
             sqes: sqes.cast(),
             sqes_len,
             pending,
@@ -325,7 +362,9 @@ impl Drop for IoUring {
         // SAFETY: mappings and descriptor are exclusively owned.
         unsafe {
             munmap(self.sq_ring.cast(), self.sq_ring_len);
-            munmap(self.cq_ring.cast(), self.cq_ring_len);
+            if !self.single_mmap {
+                munmap(self.cq_ring.cast(), self.cq_ring_len);
+            }
             munmap(self.sqes.cast(), self.sqes_len);
             close(self.fd);
         }
@@ -349,6 +388,7 @@ mod tests {
             sq_ring_len: 0,
             cq_ring: core::ptr::null_mut(),
             cq_ring_len: 0,
+            single_mmap: false,
             sqes: core::ptr::null_mut(),
             sqes_len: 0,
             pending: Vec::new(),

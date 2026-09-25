@@ -68,7 +68,6 @@ pub struct CompletionEntry {
 /// original slice while an io_uring operation is in flight is otherwise a
 /// kernel-write-after-free hazard.
 pub struct ReadRequest {
-    buffer: Vec<u8>,
     user_data: u64,
 }
 
@@ -76,12 +75,11 @@ impl ReadRequest {
     pub fn user_data(&self) -> u64 {
         self.user_data
     }
-    pub fn buffer(&self) -> &[u8] {
-        &self.buffer
-    }
-    pub fn buffer_mut(&mut self) -> &mut [u8] {
-        &mut self.buffer
-    }
+}
+
+struct PendingRead {
+    user_data: u64,
+    buffer: Vec<u8>,
 }
 
 unsafe extern "C" {
@@ -101,18 +99,26 @@ unsafe extern "C" {
 #[derive(Debug)]
 pub enum IoUringError {
     InvalidEntries,
+    InvalidRead,
+    ReadTooLarge,
     Setup(io::Error),
     Mmap(io::Error),
     QueueFull,
+    CompletionUnknown,
     Enter(io::Error),
 }
 impl core::fmt::Display for IoUringError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::InvalidEntries => f.write_str("io_uring entries must be nonzero"),
+            Self::InvalidRead => {
+                f.write_str("io_uring read requires a valid fd and non-empty buffer")
+            }
+            Self::ReadTooLarge => f.write_str("io_uring read buffer exceeds the u32 length field"),
             Self::Setup(e) => write!(f, "io_uring_setup failed: {e}"),
             Self::Mmap(e) => write!(f, "io_uring mmap failed: {e}"),
             Self::QueueFull => f.write_str("io_uring submission queue is full"),
+            Self::CompletionUnknown => f.write_str("io_uring completion has no owned request"),
             Self::Enter(e) => write!(f, "io_uring_enter failed: {e}"),
         }
     }
@@ -128,6 +134,8 @@ pub struct IoUring {
     cq_ring_len: usize,
     sqes: *mut SubmissionEntry,
     sqes_len: usize,
+    pending: Vec<PendingRead>,
+    completed: Vec<(CompletionEntry, Vec<u8>)>,
 }
 
 impl IoUring {
@@ -174,6 +182,14 @@ impl IoUring {
             }
             return Err(IoUringError::Mmap(io::Error::from_raw_os_error(12)));
         }
+        let mut pending = Vec::new();
+        pending
+            .try_reserve_exact(params.sq_entries as usize)
+            .map_err(|_| IoUringError::Mmap(io::Error::from_raw_os_error(12)))?;
+        let mut completed = Vec::new();
+        completed
+            .try_reserve_exact(params.cq_entries as usize)
+            .map_err(|_| IoUringError::Mmap(io::Error::from_raw_os_error(12)))?;
         Ok(Self {
             fd,
             params,
@@ -183,6 +199,8 @@ impl IoUring {
             cq_ring_len,
             sqes: sqes.cast(),
             sqes_len,
+            pending,
+            completed,
         })
     }
     pub const fn raw_fd(&self) -> i32 {
@@ -198,6 +216,13 @@ impl IoUring {
         offset: u64,
         user_data: u64,
     ) -> Result<ReadRequest, IoUringError> {
+        if fd < 0 || buffer.is_empty() {
+            return Err(IoUringError::InvalidRead);
+        }
+        let length = u32::try_from(buffer.len()).map_err(|_| IoUringError::ReadTooLarge)?;
+        if self.pending.len() + self.completed.len() >= self.params.cq_entries as usize {
+            return Err(IoUringError::QueueFull);
+        }
         // SAFETY: ring pointers are valid shared mappings owned by self.
         unsafe {
             let head = self.sq_u32(self.params.sq_off.head).read_volatile();
@@ -212,7 +237,7 @@ impl IoUring {
                 fd,
                 off: offset,
                 addr: buffer.as_mut_ptr() as u64,
-                len: buffer.len() as u32,
+                len: length,
                 user_data,
                 ..Default::default()
             };
@@ -221,7 +246,8 @@ impl IoUring {
                 .write_volatile(index);
             tail_ptr.write_volatile(tail.wrapping_add(1));
         }
-        Ok(ReadRequest { buffer, user_data })
+        self.pending.push(PendingRead { user_data, buffer });
+        Ok(ReadRequest { user_data })
     }
     pub fn enter(&self, submit: u32, wait_for: u32) -> Result<u32, IoUringError> {
         let flags = if wait_for != 0 { ENTER_GETEVENTS } else { 0 }; // SAFETY: descriptor and syscall arguments are owned/validated.
@@ -244,7 +270,7 @@ impl IoUring {
             Ok(raw as u32)
         }
     }
-    pub fn try_complete(&self) -> Option<CompletionEntry> {
+    pub fn try_complete(&mut self) -> Option<CompletionEntry> {
         // SAFETY: volatile accesses follow the CQ ring protocol.
         unsafe {
             let head_ptr = self.cq_u32(self.params.cq_off.head);
@@ -256,8 +282,33 @@ impl IoUring {
             let index = head & self.cq_u32(self.params.cq_off.ring_mask).read_volatile();
             let entry = self.cqes().add(index as usize).read_volatile();
             head_ptr.write_volatile(head.wrapping_add(1));
+            if let Some(position) = self
+                .pending
+                .iter()
+                .position(|request| request.user_data == entry.user_data)
+            {
+                let mut request = self.pending.swap_remove(position);
+                if entry.result >= 0 {
+                    request.buffer.truncate(entry.result as usize);
+                } else {
+                    request.buffer.clear();
+                }
+                self.completed.push((entry, request.buffer));
+            }
             Some(entry)
         }
+    }
+
+    /// Takes the buffer retained for a completed CQE. The ring owns the
+    /// allocation until this call, even if the original request token was
+    /// dropped immediately after submission.
+    pub fn take_completed(&mut self, user_data: u64) -> Result<Vec<u8>, IoUringError> {
+        let position = self
+            .completed
+            .iter()
+            .position(|(entry, _)| entry.user_data == user_data)
+            .ok_or(IoUringError::CompletionUnknown)?;
+        Ok(self.completed.swap_remove(position).1)
     }
     unsafe fn sq_u32(&self, offset: u32) -> *mut u32 {
         unsafe { self.sq_ring.add(offset as usize).cast() }
@@ -287,5 +338,25 @@ mod tests {
     #[test]
     fn zero_entries_rejected_before_syscall() {
         assert!(matches!(IoUring::new(0), Err(IoUringError::InvalidEntries)));
+    }
+
+    #[test]
+    fn invalid_read_inputs_are_rejected_before_queue_access() {
+        let mut ring = core::mem::ManuallyDrop::new(IoUring {
+            fd: -1,
+            params: Params::default(),
+            sq_ring: core::ptr::null_mut(),
+            sq_ring_len: 0,
+            cq_ring: core::ptr::null_mut(),
+            cq_ring_len: 0,
+            sqes: core::ptr::null_mut(),
+            sqes_len: 0,
+            pending: Vec::new(),
+            completed: Vec::new(),
+        });
+        assert!(matches!(
+            ring.submit_read(-1, Vec::new(), 0, 1),
+            Err(IoUringError::InvalidRead)
+        ));
     }
 }

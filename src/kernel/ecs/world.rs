@@ -23,6 +23,7 @@ pub struct ComponentId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorldError {
     Entity(EntityError),
+    EntityNotAlive,
     Storage(StorageError),
 }
 
@@ -35,10 +36,30 @@ impl ComponentId {
 pub struct World {
     entities: Entities,
     /// Dense slot per component id. Mirrored by `by_type`.
-    slots: Vec<Option<Box<dyn Any + Send>>>,
+    slots: Vec<Option<Box<dyn ErasedStorage>>>,
     by_type: HashMap<std::any::TypeId, usize>,
     /// Which slots are currently alive (for entity iteration).
     alive: Bitset,
+}
+
+trait ErasedStorage: Any + Send {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn remove_entity(&mut self, entity: Entity) -> bool;
+}
+
+impl<T: Send + 'static> ErasedStorage for ComponentStorage<T> {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn remove_entity(&mut self, entity: Entity) -> bool {
+        self.remove(entity).is_some()
+    }
 }
 
 impl Default for World {
@@ -90,6 +111,11 @@ impl World {
             .map_err(WorldError::Entity)?
         {
             self.alive.clear(entity.index as usize);
+            for slot in &mut self.slots {
+                if let Some(storage) = slot.as_mut() {
+                    storage.remove_entity(entity);
+                }
+            }
             Ok(true)
         } else {
             Ok(false)
@@ -157,6 +183,9 @@ impl World {
         entity: Entity,
         value: T,
     ) -> Result<(), WorldError> {
+        if !self.is_alive(entity) {
+            return Err(WorldError::EntityNotAlive);
+        }
         let id = self.register_component::<T>();
         self.try_insert_typed(id, entity, value)
     }
@@ -173,11 +202,14 @@ impl World {
         entity: Entity,
         value: T,
     ) -> Result<(), WorldError> {
+        if !self.is_alive(entity) {
+            return Err(WorldError::EntityNotAlive);
+        }
         // The id is only a hint; the type-keyed slot is authoritative.
         let idx = self.slot_index::<T>();
         if let Some(i) = idx {
             if let Some(boxed) = self.slots[i].as_mut() {
-                if let Some(storage) = boxed.downcast_mut::<ComponentStorage<T>>() {
+                if let Some(storage) = boxed.as_any_mut().downcast_mut::<ComponentStorage<T>>() {
                     storage
                         .try_insert(entity, value)
                         .map_err(WorldError::Storage)?;
@@ -191,7 +223,7 @@ impl World {
         let i = self.slot_index::<T>()?;
         self.slots[i]
             .as_ref()
-            .and_then(|boxed| boxed.downcast_ref::<ComponentStorage<T>>())
+            .and_then(|boxed| boxed.as_any().downcast_ref::<ComponentStorage<T>>())
             .and_then(|storage| storage.get(entity))
     }
 
@@ -199,7 +231,7 @@ impl World {
         let i = self.slot_index::<T>()?;
         self.slots[i]
             .as_mut()
-            .and_then(|boxed| boxed.downcast_mut::<ComponentStorage<T>>())
+            .and_then(|boxed| boxed.as_any_mut().downcast_mut::<ComponentStorage<T>>())
             .and_then(|storage| storage.get_mut(entity))
     }
 
@@ -207,7 +239,7 @@ impl World {
         let i = self.slot_index::<T>()?;
         self.slots[i]
             .as_mut()
-            .and_then(|boxed| boxed.downcast_mut::<ComponentStorage<T>>())
+            .and_then(|boxed| boxed.as_any_mut().downcast_mut::<ComponentStorage<T>>())
             .and_then(|storage| storage.remove(entity))
     }
 
@@ -219,7 +251,7 @@ impl World {
         };
         self.slots[i]
             .as_ref()
-            .and_then(|boxed| boxed.downcast_ref::<ComponentStorage<T>>())
+            .and_then(|boxed| boxed.as_any().downcast_ref::<ComponentStorage<T>>())
             .map_or(0, |storage| storage.len())
     }
 
@@ -236,10 +268,10 @@ impl World {
         let (Some(a), Some(b)) = (
             self.slots[ia]
                 .as_ref()
-                .and_then(|s| s.downcast_ref::<ComponentStorage<A>>()),
+                .and_then(|s| s.as_any().downcast_ref::<ComponentStorage<A>>()),
             self.slots[ib]
                 .as_ref()
-                .and_then(|s| s.downcast_ref::<ComponentStorage<B>>()),
+                .and_then(|s| s.as_any().downcast_ref::<ComponentStorage<B>>()),
         ) else {
             return;
         };
@@ -274,15 +306,15 @@ impl World {
         let i = self.slot_index::<T>()?;
         self.slots[i]
             .as_mut()
-            .and_then(|boxed| boxed.downcast_mut::<ComponentStorage<T>>())
+            .and_then(|boxed| boxed.as_any_mut().downcast_mut::<ComponentStorage<T>>())
             .map(|storage| WorldSingle { storage })
     }
 }
 
-/// Disjoint `&mut` to two slots of a Vec<Option<Box<dyn Any + Send>>> via
-/// `split_at_mut` — pure safe code, distinct indices.
+/// Disjoint `&mut` to two erased component slots via `split_at_mut` — pure
+/// safe code, distinct indices.
 fn get2_mut<A: 'static, B: 'static>(
-    slots: &mut Vec<Option<Box<dyn Any + Send>>>,
+    slots: &mut Vec<Option<Box<dyn ErasedStorage>>>,
     ia: usize,
     ib: usize,
 ) -> Option<WorldPair<'_, A, B>> {
@@ -302,10 +334,10 @@ fn get2_mut<A: 'static, B: 'static>(
     };
     let a = a
         .and_then(|slot| slot.as_mut())
-        .and_then(|boxed| boxed.downcast_mut::<ComponentStorage<A>>());
+        .and_then(|boxed| boxed.as_any_mut().downcast_mut::<ComponentStorage<A>>());
     let b = b
         .and_then(|slot| slot.as_mut())
-        .and_then(|boxed| boxed.downcast_mut::<ComponentStorage<B>>());
+        .and_then(|boxed| boxed.as_any_mut().downcast_mut::<ComponentStorage<B>>());
     match (a, b) {
         (Some(a), Some(b)) => Some(WorldPair {
             storage_a: a,
@@ -349,10 +381,24 @@ mod tests {
         let e0 = world.spawn();
         world.insert(e0, 9u32);
         world.despawn(e0);
+        assert_eq!(world.count::<u32>(), 0, "despawn must release components");
         let e1 = world.spawn();
         assert_eq!(e1.index, e0.index);
         assert_ne!(e1.generation, e0.generation);
         assert!(world.get::<u32>(e1).is_none(), "stale gen hides component");
+    }
+
+    #[test]
+    fn insert_rejects_dead_entity_before_storage_allocation() {
+        let mut world = World::new();
+        let dead = Entity::new(u32::MAX, u32::MAX);
+
+        assert_eq!(
+            world.try_insert(dead, 9u32),
+            Err(WorldError::EntityNotAlive)
+        );
+        assert_eq!(world.entity_count(), 0);
+        assert_eq!(world.count::<u32>(), 0);
     }
 
     #[test]

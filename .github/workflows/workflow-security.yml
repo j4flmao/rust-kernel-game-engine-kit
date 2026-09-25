@@ -1,0 +1,35 @@
+name: workflow security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Validate GitHub Actions syntax
+        uses: docker://rhysd/actionlint:1.7.7
+
+  zizmor:
+    name: zizmor workflow audit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install zizmor
+        run: python -m pip install --disable-pip-version-check --user zizmor
+      - name: Audit workflows
+        run: zizmor .github/workflows

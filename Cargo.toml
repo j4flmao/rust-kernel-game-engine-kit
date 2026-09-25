@@ -2,6 +2,7 @@
 name = "rust-kernel-game-engine-kit"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.95"
 description = "Microkernel-style game engine core in Rust."
 license = "Apache-2.0"
 

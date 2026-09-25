@@ -24,6 +24,8 @@ pub type VkDevice = *mut c_void;
 pub type VkQueue = *mut c_void;
 pub type VkCommandPool = *mut c_void;
 pub type VkCommandBuffer = *mut c_void;
+pub type VkBuffer = u64;
+pub type VkDeviceMemory = u64;
 pub type VkFence = *mut c_void;
 pub type VkSemaphore = *mut c_void;
 pub type VkSwapchainKHR = u64;
@@ -67,6 +69,53 @@ type VkBeginCommandBuffer =
     unsafe extern "system" fn(VkCommandBuffer, *const CommandBufferBeginInfo) -> VkResult;
 type VkEndCommandBuffer = unsafe extern "system" fn(VkCommandBuffer) -> VkResult;
 type VkResetCommandBuffer = unsafe extern "system" fn(VkCommandBuffer, u32) -> VkResult;
+type VkCreateBuffer = unsafe extern "system" fn(
+    VkDevice,
+    *const BufferCreateInfo,
+    *const c_void,
+    *mut VkBuffer,
+) -> VkResult;
+type VkDestroyBuffer = unsafe extern "system" fn(VkDevice, VkBuffer, *const c_void);
+type VkGetBufferMemoryRequirements =
+    unsafe extern "system" fn(VkDevice, VkBuffer, *mut MemoryRequirements);
+type VkAllocateMemory = unsafe extern "system" fn(
+    VkDevice,
+    *const MemoryAllocateInfo,
+    *const c_void,
+    *mut VkDeviceMemory,
+) -> VkResult;
+type VkFreeMemory = unsafe extern "system" fn(VkDevice, VkDeviceMemory, *const c_void);
+type VkBindBufferMemory =
+    unsafe extern "system" fn(VkDevice, VkBuffer, VkDeviceMemory, u64) -> VkResult;
+type VkMapMemory = unsafe extern "system" fn(
+    VkDevice,
+    VkDeviceMemory,
+    u64,
+    u64,
+    u32,
+    *mut *mut c_void,
+) -> VkResult;
+type VkUnmapMemory = unsafe extern "system" fn(VkDevice, VkDeviceMemory);
+type VkFlushMappedMemoryRanges =
+    unsafe extern "system" fn(VkDevice, u32, *const MappedMemoryRange) -> VkResult;
+type VkGetPhysicalDeviceMemoryProperties =
+    unsafe extern "system" fn(VkPhysicalDevice, *mut PhysicalDeviceMemoryProperties);
+type VkCmdDispatch = unsafe extern "system" fn(VkCommandBuffer, u32, u32, u32);
+type VkCmdDrawIndexedIndirect = unsafe extern "system" fn(VkCommandBuffer, VkBuffer, u64, u32, u32);
+type VkCmdCopyBuffer =
+    unsafe extern "system" fn(VkCommandBuffer, VkBuffer, VkBuffer, u32, *const BufferCopy);
+type VkCmdPipelineBarrier = unsafe extern "system" fn(
+    VkCommandBuffer,
+    u32,
+    u32,
+    u32,
+    u32,
+    *const c_void,
+    u32,
+    *const BufferMemoryBarrier,
+    u32,
+    *const c_void,
+);
 type VkCreateFence = unsafe extern "system" fn(
     VkDevice,
     *const FenceCreateInfo,
@@ -106,6 +155,20 @@ pub const VK_PRESENT_MODE_FIFO_RELAXED_KHR: u32 = 3;
 
 pub const VK_IMAGE_USAGE_TRANSFER_DST_BIT: u32 = 0x0000_0008;
 pub const VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT: u32 = 0x0000_0010;
+pub const VK_BUFFER_USAGE_STORAGE_BUFFER_BIT: u32 = 0x0000_0020;
+pub const VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT: u32 = 0x0000_0100;
+pub const VK_BUFFER_USAGE_TRANSFER_SRC_BIT: u32 = 0x0000_0001;
+pub const VK_BUFFER_USAGE_TRANSFER_DST_BIT: u32 = 0x0000_0002;
+pub const VK_PIPELINE_STAGE_TRANSFER_BIT: u32 = 0x0000_0100;
+pub const VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT: u32 = 0x0000_0800;
+pub const VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT: u32 = 0x0000_0200;
+pub const VK_ACCESS_TRANSFER_WRITE_BIT: u32 = 0x0000_1000;
+pub const VK_ACCESS_SHADER_READ_BIT: u32 = 0x0000_0020;
+pub const VK_ACCESS_SHADER_WRITE_BIT: u32 = 0x0000_0040;
+pub const VK_ACCESS_INDIRECT_COMMAND_READ_BIT: u32 = 0x0000_0002;
+pub const VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT: u32 = 0x0000_0001;
+pub const VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT: u32 = 0x0000_0002;
+pub const VK_MEMORY_PROPERTY_HOST_COHERENT_BIT: u32 = 0x0000_0004;
 pub const VK_IMAGE_LAYOUT_UNDEFINED: u32 = 0;
 pub const VK_IMAGE_LAYOUT_GENERAL: u32 = 1;
 pub const VK_IMAGE_LAYOUT_PRESENT_SRC_KHR: u32 = 1000001002;
@@ -193,6 +256,64 @@ struct CommandBufferBeginInfo {
     next: *const c_void,
     flags: u32,
     inheritance_info: *const c_void,
+}
+#[repr(C)]
+struct BufferCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    size: u64,
+    usage: u32,
+    sharing_mode: u32,
+    queue_family_index_count: u32,
+    queue_family_indices: *const u32,
+}
+#[repr(C)]
+struct MemoryRequirements {
+    size: u64,
+    alignment: u64,
+    memory_type_bits: u32,
+}
+#[repr(C)]
+struct BufferCopy {
+    src_offset: u64,
+    dst_offset: u64,
+    size: u64,
+}
+#[repr(C)]
+struct MappedMemoryRange {
+    s_type: u32,
+    next: *const c_void,
+    memory: VkDeviceMemory,
+    offset: u64,
+    size: u64,
+}
+#[repr(C)]
+struct MemoryAllocateInfo {
+    s_type: u32,
+    next: *const c_void,
+    allocation_size: u64,
+    memory_type_index: u32,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct MemoryType {
+    property_flags: u32,
+    heap_index: u32,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct MemoryHeap {
+    size: u64,
+    flags: u32,
+    _padding: u32,
+}
+#[repr(C)]
+struct PhysicalDeviceMemoryProperties {
+    memory_type_count: u32,
+    memory_types: [MemoryType; 32],
+    memory_heap_count: u32,
+    memory_heaps: [MemoryHeap; 16],
 }
 #[repr(C)]
 struct FenceCreateInfo {
@@ -452,6 +573,149 @@ impl Drop for NativeSemaphore {
         unsafe { (self.destroy)(self.device, self.handle, core::ptr::null()) };
     }
 }
+
+/// Owns a Vulkan buffer and its backing allocation.
+pub struct NativeBuffer {
+    handle: VkBuffer,
+    memory: VkDeviceMemory,
+    size: u64,
+    device: VkDevice,
+    destroy_buffer: VkDestroyBuffer,
+    free_memory: VkFreeMemory,
+    memory_properties: u32,
+}
+
+impl NativeBuffer {
+    pub const fn raw(&self) -> VkBuffer {
+        self.handle
+    }
+
+    pub const fn memory(&self) -> VkDeviceMemory {
+        self.memory
+    }
+
+    pub const fn size(&self) -> u64 {
+        self.size
+    }
+
+    pub fn write_host_coherent(
+        &self,
+        loader: &VulkanLoader,
+        offset: u64,
+        bytes: &[u8],
+    ) -> Result<(), VulkanLoaderError> {
+        let required = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        if self.memory_properties & required != required {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let length = u64::try_from(bytes.len()).map_err(|_| VulkanLoaderError::InvalidQueuePlan)?;
+        let end = offset
+            .checked_add(length)
+            .ok_or(VulkanLoaderError::InvalidQueuePlan)?;
+        if end > self.size {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let map: VkMapMemory = loader.device_command(self.device, b"vkMapMemory\0")?;
+        let unmap: VkUnmapMemory = loader.device_command(self.device, b"vkUnmapMemory\0")?;
+        let mut mapped = core::ptr::null_mut();
+        let result = unsafe { map(self.device, self.memory, offset, length, 0, &mut mapped) };
+        if result != VK_SUCCESS || mapped.is_null() {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), mapped.cast::<u8>(), bytes.len()) };
+        unsafe { unmap(self.device, self.memory) };
+        Ok(())
+    }
+
+    /// Writes host-visible memory and flushes the aligned range when the
+    /// allocation is non-coherent.
+    pub fn write_host_visible(
+        &self,
+        loader: &VulkanLoader,
+        offset: u64,
+        bytes: &[u8],
+        non_coherent_atom_size: u64,
+    ) -> Result<(), VulkanLoaderError> {
+        if self.memory_properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT == 0 {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let length = u64::try_from(bytes.len()).map_err(|_| VulkanLoaderError::InvalidQueuePlan)?;
+        let end = offset
+            .checked_add(length)
+            .ok_or(VulkanLoaderError::InvalidQueuePlan)?;
+        if end > self.size {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let coherent = self.memory_properties & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT != 0;
+        let atom = if coherent { 1 } else { non_coherent_atom_size };
+        if atom == 0 {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let mapped_offset = offset / atom * atom;
+        let mapped_end = end
+            .checked_add(atom - 1)
+            .ok_or(VulkanLoaderError::InvalidQueuePlan)?
+            / atom
+            * atom;
+        if mapped_end > self.size {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let map: VkMapMemory = loader.device_command(self.device, b"vkMapMemory\0")?;
+        let unmap: VkUnmapMemory = loader.device_command(self.device, b"vkUnmapMemory\0")?;
+        let mut mapped = core::ptr::null_mut();
+        let result = unsafe {
+            map(
+                self.device,
+                self.memory,
+                mapped_offset,
+                mapped_end - mapped_offset,
+                0,
+                &mut mapped,
+            )
+        };
+        if result != VK_SUCCESS || mapped.is_null() {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        let relative = usize::try_from(offset - mapped_offset)
+            .map_err(|_| VulkanLoaderError::InvalidQueuePlan)?;
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                mapped.cast::<u8>().add(relative),
+                bytes.len(),
+            )
+        };
+        if !coherent {
+            let flush: VkFlushMappedMemoryRanges =
+                loader.device_command(self.device, b"vkFlushMappedMemoryRanges\0")?;
+            let range = MappedMemoryRange {
+                s_type: 6,
+                next: core::ptr::null(),
+                memory: self.memory,
+                offset: mapped_offset,
+                size: mapped_end - mapped_offset,
+            };
+            let result = unsafe { flush(self.device, 1, &range) };
+            if result != VK_SUCCESS {
+                unsafe { unmap(self.device, self.memory) };
+                return Err(VulkanLoaderError::Api(result));
+            }
+        }
+        unsafe { unmap(self.device, self.memory) };
+        Ok(())
+    }
+}
+
+impl Drop for NativeBuffer {
+    fn drop(&mut self) {
+        // SAFETY: the wrapper owns both objects and drops them before the
+        // parent logical device.
+        unsafe {
+            (self.destroy_buffer)(self.device, self.handle, core::ptr::null());
+            (self.free_memory)(self.device, self.memory, core::ptr::null());
+        }
+    }
+}
 impl NativeFence {
     pub const fn raw(&self) -> VkFence {
         self.handle
@@ -544,6 +808,190 @@ pub unsafe fn reset_command_buffer(
     }
 }
 
+/// Records a compute dispatch for a live command buffer.
+///
+/// # Safety
+/// `buffer` must be a live command buffer currently recording, and the caller
+/// must have bound a compatible compute pipeline and descriptor state.
+pub unsafe fn cmd_dispatch(
+    loader: &VulkanLoader,
+    buffer: VkCommandBuffer,
+    groups: [u32; 3],
+) -> Result<(), VulkanLoaderError> {
+    if buffer.is_null() || groups.contains(&0) {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let dispatch: VkCmdDispatch = loader.command(b"vkCmdDispatch\0")?;
+    // SAFETY: caller guarantees a recording command buffer and compatible state.
+    unsafe { dispatch(buffer, groups[0], groups[1], groups[2]) };
+    Ok(())
+}
+
+/// Records a compute dispatch through the logical-device dispatch table.
+///
+/// The device-aware variant is preferred for live rendering because Vulkan
+/// device commands must be resolved through `vkGetDeviceProcAddr`.
+///
+/// # Safety
+/// `device` and `buffer` must be live objects from the same Vulkan device.
+/// The command buffer must be recording with a compatible compute pipeline.
+pub unsafe fn cmd_dispatch_device(
+    loader: &VulkanLoader,
+    device: VkDevice,
+    buffer: VkCommandBuffer,
+    groups: [u32; 3],
+) -> Result<(), VulkanLoaderError> {
+    if device.is_null() || buffer.is_null() || groups.contains(&0) {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let dispatch: VkCmdDispatch = loader.device_command(device, b"vkCmdDispatch\0")?;
+    // SAFETY: caller guarantees a recording command buffer and compatible state.
+    unsafe { dispatch(buffer, groups[0], groups[1], groups[2]) };
+    Ok(())
+}
+
+/// Records indexed indirect draws for a live command buffer.
+///
+/// # Safety
+/// `buffer` and `indirect` must belong to the live device, the command buffer
+/// must be recording, and the indirect range must be valid for the bound draw
+/// pipeline.
+pub unsafe fn cmd_draw_indexed_indirect(
+    loader: &VulkanLoader,
+    buffer: VkCommandBuffer,
+    indirect: VkBuffer,
+    offset: u64,
+    draw_count: u32,
+    stride: u32,
+) -> Result<(), VulkanLoaderError> {
+    if buffer.is_null() || indirect == 0 || draw_count == 0 || stride == 0 {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let draw: VkCmdDrawIndexedIndirect = loader.command(b"vkCmdDrawIndexedIndirect\0")?;
+    // SAFETY: caller guarantees a recording command buffer and valid buffer range.
+    unsafe { draw(buffer, indirect, offset, draw_count, stride) };
+    Ok(())
+}
+
+/// Records indexed indirect draws through the logical-device dispatch table.
+///
+/// # Safety
+/// `device`, `buffer`, and `indirect` must belong to the same live device;
+/// the command buffer must be recording and the indirect range must be valid
+/// for the bound graphics pipeline.
+pub unsafe fn cmd_draw_indexed_indirect_device(
+    loader: &VulkanLoader,
+    device: VkDevice,
+    buffer: VkCommandBuffer,
+    indirect: VkBuffer,
+    offset: u64,
+    draw_count: u32,
+    stride: u32,
+) -> Result<(), VulkanLoaderError> {
+    if device.is_null() || buffer.is_null() || indirect == 0 || draw_count == 0 || stride == 0 {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let draw: VkCmdDrawIndexedIndirect =
+        loader.device_command(device, b"vkCmdDrawIndexedIndirect\0")?;
+    // SAFETY: caller guarantees a recording command buffer and valid buffer range.
+    unsafe { draw(buffer, indirect, offset, draw_count, stride) };
+    Ok(())
+}
+
+/// Records one bounded staging-to-device buffer copy.
+///
+/// # Safety
+/// All handles must belong to the same live device and the command buffer must
+/// be recording. The caller must provide the required transfer barriers.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn cmd_copy_buffer_device(
+    loader: &VulkanLoader,
+    device: VkDevice,
+    command: VkCommandBuffer,
+    source: VkBuffer,
+    destination: VkBuffer,
+    source_offset: u64,
+    destination_offset: u64,
+    size: u64,
+) -> Result<(), VulkanLoaderError> {
+    if device.is_null() || command.is_null() || source == 0 || destination == 0 || size == 0 {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let source_end = source_offset
+        .checked_add(size)
+        .ok_or(VulkanLoaderError::InvalidQueuePlan)?;
+    let destination_end = destination_offset
+        .checked_add(size)
+        .ok_or(VulkanLoaderError::InvalidQueuePlan)?;
+    if source_end < source_offset || destination_end < destination_offset {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let copy: VkCmdCopyBuffer = loader.device_command(device, b"vkCmdCopyBuffer\0")?;
+    let region = BufferCopy {
+        src_offset: source_offset,
+        dst_offset: destination_offset,
+        size,
+    };
+    unsafe { copy(command, source, destination, 1, &region) };
+    Ok(())
+}
+
+/// Inserts one buffer barrier for a transfer/compute/draw handoff.
+///
+/// # Safety
+/// `command` must be recording and `buffer` must belong to `device`.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn cmd_buffer_barrier_device(
+    loader: &VulkanLoader,
+    device: VkDevice,
+    command: VkCommandBuffer,
+    buffer: VkBuffer,
+    offset: u64,
+    size: u64,
+    src_stage: u32,
+    dst_stage: u32,
+    src_access: u32,
+    dst_access: u32,
+) -> Result<(), VulkanLoaderError> {
+    if device.is_null()
+        || command.is_null()
+        || buffer == 0
+        || size == 0
+        || src_stage == 0
+        || dst_stage == 0
+        || offset.checked_add(size).is_none()
+    {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let barrier: VkCmdPipelineBarrier = loader.device_command(device, b"vkCmdPipelineBarrier\0")?;
+    let info = BufferMemoryBarrier {
+        s_type: 44,
+        next: core::ptr::null(),
+        src_access_mask: src_access,
+        dst_access_mask: dst_access,
+        src_queue_family_index: u32::MAX,
+        dst_queue_family_index: u32::MAX,
+        buffer,
+        offset,
+        size,
+    };
+    unsafe {
+        barrier(
+            command,
+            src_stage,
+            dst_stage,
+            0,
+            0,
+            core::ptr::null(),
+            1,
+            &info,
+            0,
+            core::ptr::null(),
+        )
+    };
+    Ok(())
+}
+
 impl NativeCommandPool {
     pub const fn raw(&self) -> VkCommandPool {
         self.handle
@@ -610,6 +1058,119 @@ impl LogicalDevice {
         unsafe { (self.get_queue)(self.handle, family, index, &mut queue) };
         (!queue.is_null()).then_some(queue)
     }
+
+    /// Creates and binds one bounded Vulkan buffer allocation.
+    ///
+    /// # Safety
+    /// `physical` must be live and paired with this logical device. `size` and
+    /// `usage` must be non-zero and valid for the eventual Vulkan commands.
+    pub unsafe fn create_buffer(
+        &self,
+        loader: &VulkanLoader,
+        physical: VkPhysicalDevice,
+        size: u64,
+        usage: u32,
+        required_properties: u32,
+        preferred_properties: u32,
+    ) -> Result<NativeBuffer, VulkanLoaderError> {
+        if physical.is_null() || size == 0 || usage == 0 {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let create: VkCreateBuffer = loader.device_command(self.handle, b"vkCreateBuffer\0")?;
+        let destroy_buffer: VkDestroyBuffer =
+            loader.device_command(self.handle, b"vkDestroyBuffer\0")?;
+        let requirements: VkGetBufferMemoryRequirements =
+            loader.device_command(self.handle, b"vkGetBufferMemoryRequirements\0")?;
+        let allocate: VkAllocateMemory =
+            loader.device_command(self.handle, b"vkAllocateMemory\0")?;
+        let free_memory: VkFreeMemory = loader.device_command(self.handle, b"vkFreeMemory\0")?;
+        let bind: VkBindBufferMemory =
+            loader.device_command(self.handle, b"vkBindBufferMemory\0")?;
+        let info = BufferCreateInfo {
+            s_type: 12,
+            next: core::ptr::null(),
+            flags: 0,
+            size,
+            usage,
+            sharing_mode: VK_SHARING_MODE_EXCLUSIVE,
+            queue_family_index_count: 0,
+            queue_family_indices: core::ptr::null(),
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        let mut requirements_out = MemoryRequirements {
+            size: 0,
+            alignment: 0,
+            memory_type_bits: 0,
+        };
+        unsafe { requirements(self.handle, handle, &mut requirements_out) };
+        let get_memory_properties: VkGetPhysicalDeviceMemoryProperties =
+            loader.command(b"vkGetPhysicalDeviceMemoryProperties\0")?;
+        let mut properties = PhysicalDeviceMemoryProperties {
+            memory_type_count: 0,
+            memory_types: [MemoryType {
+                property_flags: 0,
+                heap_index: 0,
+            }; 32],
+            memory_heap_count: 0,
+            memory_heaps: [MemoryHeap {
+                size: 0,
+                flags: 0,
+                _padding: 0,
+            }; 16],
+        };
+        unsafe { get_memory_properties(physical, &mut properties) };
+        let Some(type_index) = select_memory_type(
+            &properties,
+            requirements_out.memory_type_bits,
+            required_properties,
+            preferred_properties,
+        ) else {
+            unsafe { destroy_buffer(self.handle, handle, core::ptr::null()) };
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        };
+        let allocation_info = MemoryAllocateInfo {
+            s_type: 5,
+            next: core::ptr::null(),
+            allocation_size: requirements_out.size,
+            memory_type_index: type_index,
+        };
+        let mut memory = 0;
+        let result = unsafe {
+            allocate(
+                self.handle,
+                &allocation_info,
+                core::ptr::null(),
+                &mut memory,
+            )
+        };
+        if result != VK_SUCCESS || memory == 0 {
+            unsafe { destroy_buffer(self.handle, handle, core::ptr::null()) };
+            return Err(VulkanLoaderError::Api(result));
+        }
+        let result = unsafe { bind(self.handle, handle, memory, 0) };
+        if result != VK_SUCCESS {
+            unsafe {
+                free_memory(self.handle, memory, core::ptr::null());
+                destroy_buffer(self.handle, handle, core::ptr::null());
+            }
+            return Err(VulkanLoaderError::Api(result));
+        }
+        let memory_properties = properties.memory_types[type_index as usize].property_flags;
+        Ok(NativeBuffer {
+            handle,
+            memory,
+            size,
+            device: self.handle,
+            destroy_buffer,
+            free_memory,
+            memory_properties,
+        })
+    }
+
     pub fn create_command_pool(
         &self,
         loader: &VulkanLoader,
@@ -985,6 +1546,23 @@ impl VulkanLoader {
         Ok(unsafe { core::mem::transmute_copy(&pointer) })
     }
 
+    pub(crate) fn device_command<T>(
+        &self,
+        device: VkDevice,
+        name: &'static [u8],
+    ) -> Result<T, VulkanLoaderError> {
+        // SAFETY: static command names are NUL-terminated and the caller
+        // supplies the live device whose dispatch table owns the command.
+        let pointer = unsafe { self.device_proc(device, name) }.ok_or_else(|| {
+            VulkanLoaderError::MissingEntry(DlError::Symbol {
+                symbol: String::from_utf8_lossy(name).into_owned(),
+                code: 0,
+            })
+        })?;
+        // SAFETY: T matches the Vulkan command ABI at each call site.
+        Ok(unsafe { core::mem::transmute_copy(&pointer) })
+    }
+
     pub fn instance_api_version(&self) -> Result<u32, VulkanLoaderError> {
         let name = b"vkEnumerateInstanceVersion\0";
         // SAFETY: name is NUL-terminated and the returned pointer is used
@@ -1003,6 +1581,32 @@ impl VulkanLoader {
             Err(VulkanLoaderError::ApiQuery(result))
         }
     }
+}
+
+fn select_memory_type(
+    properties: &PhysicalDeviceMemoryProperties,
+    compatible_bits: u32,
+    required: u32,
+    preferred: u32,
+) -> Option<u32> {
+    let count = (properties.memory_type_count as usize).min(properties.memory_types.len());
+    let mut best = None;
+    let mut best_score = 0_u32;
+    for index in 0..count {
+        if compatible_bits & (1_u32 << index) == 0 {
+            continue;
+        }
+        let flags = properties.memory_types[index].property_flags;
+        if flags & required != required {
+            continue;
+        }
+        let score = (flags & preferred).count_ones();
+        if best.is_none() || score > best_score {
+            best = Some(index as u32);
+            best_score = score;
+        }
+    }
+    best
 }
 
 /// # Safety

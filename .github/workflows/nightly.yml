@@ -18,8 +18,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c
       - name: Run repeated test cycles
         shell: bash
         run: |
@@ -32,14 +35,47 @@ jobs:
   extended-fuzz:
     name: extended scheduler fuzzing
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@be39649afda95dbf70f87cce95f68b8d5797b296
         with:
           targets: x86_64-unknown-linux-gnu
-      - uses: taiki-e/install-action@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172
         with:
           tool: cargo-fuzz
-      - run: cargo fuzz run --target x86_64-unknown-linux-gnu scheduler_input -- -runs=10000 -timeout=10 -max_total_time=600 -rss_limit_mb=2048
+      - name: Run extended fuzz targets
+        run: |
+          set -euo pipefail
+          for target in scheduler_input schedule_waves ecs_mutations render_preparation; do
+            cargo fuzz run --target x86_64-unknown-linux-gnu "$target" -- -runs=10000 -timeout=10 -max_total_time=600 -rss_limit_mb=2048
+          done
         working-directory: fuzz
+
+  soak-memory:
+    name: soak and memory stability
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c
+      - name: Repeat engine tests with RSS telemetry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for cycle in $(seq 1 30); do
+            echo "soak cycle ${cycle}/30"
+            /usr/bin/time -v cargo test --lib --tests --all-features -- --test-threads=1 2>"time-${cycle}.log"
+            grep -E "Maximum resident set size|Exit status" "time-${cycle}.log" || true
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: soak-memory-telemetry
+          path: time-*.log
+          if-no-files-found: error

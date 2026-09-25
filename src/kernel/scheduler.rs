@@ -13,9 +13,12 @@ use crate::kernel::ecs::world::World;
 use crate::kernel::error::KernelError;
 use crate::kernel::mem::arena::BumpArena;
 use crate::kernel::registry::Registry;
-use crate::kernel::subsystem::Subsystem;
+use crate::kernel::subsystem::{Subsystem, SystemAccess};
 use crate::kernel::trace::frame_tracer::{FrameTracer, TraceSample};
-use crate::kernel::{DEFAULT_ARENA_CAPACITY, DEFAULT_FRAME_BUDGET_NS, FIXED_DT_NS};
+use crate::kernel::{
+    DeferredCommands, DEFAULT_ARENA_CAPACITY, DEFAULT_DEFERRED_COMMAND_CAPACITY,
+    DEFAULT_FRAME_BUDGET_NS, FIXED_DT_NS,
+};
 
 /// DFS colors for cycle detection.
 const WHITE: u8 = 0; // unvisited
@@ -98,6 +101,71 @@ pub fn dependency_waves(order: &[usize], deps: &[Vec<usize>]) -> Vec<Vec<usize>>
     waves
 }
 
+/// Builds deterministic waves from dependency order and declared access sets.
+///
+/// The topological order is the tie-breaker. A conflict is placed in a later
+/// wave, so independent read/read systems can share a wave while legacy or
+/// write-conflicting systems remain ordered. This function only plans work;
+/// it does not bypass the borrow-safe serial KernelContext execution path.
+pub fn access_waves(
+    order: &[usize],
+    deps: &[Vec<usize>],
+    accesses: &[SystemAccess],
+) -> Vec<Vec<usize>> {
+    assert_eq!(
+        deps.len(),
+        accesses.len(),
+        "dependency/access length mismatch"
+    );
+    let mut level = vec![0usize; deps.len()];
+    for &node in order {
+        let mut node_level = deps[node]
+            .iter()
+            .map(|&dependency| level[dependency].saturating_add(1))
+            .max()
+            .unwrap_or(0);
+        for &prior in order.iter().take_while(|&&candidate| candidate != node) {
+            if accesses[node].conflicts(accesses[prior]) {
+                node_level = node_level.max(level[prior].saturating_add(1));
+            }
+        }
+        level[node] = node_level;
+    }
+    let wave_count = level.iter().copied().max().map_or(0, |max| max + 1);
+    let mut waves = vec![Vec::new(); wave_count];
+    for &node in order {
+        waves[level[node]].push(node);
+    }
+    waves
+}
+
+/// Validated, immutable execution plan for the kernel schedule.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SchedulePlan {
+    order: Vec<usize>,
+    waves: Vec<Vec<usize>>,
+}
+
+impl SchedulePlan {
+    pub(crate) fn build(
+        deps: &[Vec<usize>],
+        names: &[String],
+        accesses: &[SystemAccess],
+    ) -> Result<Self, KernelError> {
+        let order = toposort(deps, names)?;
+        let waves = access_waves(&order, deps, accesses);
+        Ok(Self { order, waves })
+    }
+
+    pub fn order(&self) -> &[usize] {
+        &self.order
+    }
+
+    pub fn waves(&self) -> &[Vec<usize>] {
+        &self.waves
+    }
+}
+
 /// Executes independent jobs in one validated dependency wave concurrently.
 /// Subsystems remain isolated from one another; callers exchange results via
 /// the message bus after `run` returns. This is the safe parallel primitive
@@ -178,6 +246,7 @@ pub struct Kernel {
     world: World,
     /// Per-frame scratch arena, rewound at the start of every tick.
     frame_arena: BumpArena,
+    deferred: DeferredCommands,
     initialized: bool,
     frame_index: u64,
     parallel_executor: ParallelWaveExecutor,
@@ -200,6 +269,7 @@ impl Kernel {
             tracer,
             world: World::new(),
             frame_arena: BumpArena::new(DEFAULT_ARENA_CAPACITY),
+            deferred: DeferredCommands::with_capacity(DEFAULT_DEFERRED_COMMAND_CAPACITY),
             initialized: false,
             frame_index: 0,
             parallel_executor: ParallelWaveExecutor::new(
@@ -231,7 +301,13 @@ impl Kernel {
         }
         let deps = self.registry.resolve_dependencies()?;
         self.refresh_names();
-        let order = toposort(&deps, &self.names)?;
+        let accesses: Vec<SystemAccess> = self
+            .registry
+            .entries
+            .iter()
+            .map(|(_, subsystem)| subsystem.access())
+            .collect();
+        let plan = SchedulePlan::build(&deps, &self.names, &accesses)?;
 
         // Register exactly one inbox per subsystem, index == registry index.
         for _ in 0..self.registry.entries.len() {
@@ -239,8 +315,8 @@ impl Kernel {
         }
         self.bus.set_debug_edges(&deps);
 
-        self.order = order;
-        self.waves = dependency_waves(&self.order, &deps);
+        self.order = plan.order;
+        self.waves = plan.waves;
         self.frame_arena.reset();
         for &idx in &self.order {
             let id = SubscriberId::new(idx as u32);
@@ -250,6 +326,7 @@ impl Kernel {
                 id,
                 0,
                 &mut self.world,
+                &mut self.deferred,
                 &mut self.frame_arena,
             );
             self.registry.entries[idx].1.init(&mut ctx);
@@ -285,6 +362,7 @@ impl Kernel {
                         id,
                         FIXED_DT_NS,
                         &mut self.world,
+                        &mut self.deferred,
                         &mut self.frame_arena,
                     );
                     self.registry.entries[idx].1.tick(&mut ctx, FIXED_DT_NS);
@@ -298,6 +376,10 @@ impl Kernel {
                     over_budget: dur > DEFAULT_FRAME_BUDGET_NS,
                 });
             }
+
+            // Structural ECS changes become visible only after every system
+            // in the frame has finished its current world view.
+            self.deferred.apply(&mut self.world);
 
             self.frame_index += 1;
             self.tracer.frame(Instant::now());
@@ -329,6 +411,12 @@ impl Kernel {
     /// Dependency-safe deterministic execution waves reserved for the
     /// parallel scheduler. The current executor still runs each wave serially.
     pub fn dependency_waves(&self) -> &[Vec<usize>] {
+        &self.waves
+    }
+
+    /// Returns the validated schedule waves. The current tick callback path
+    /// remains serial until deferred commands and isolated contexts are wired.
+    pub fn schedule_waves(&self) -> &[Vec<usize>] {
         &self.waves
     }
 
@@ -372,6 +460,7 @@ impl Kernel {
                 id,
                 0,
                 &mut self.world,
+                &mut self.deferred,
                 &mut self.frame_arena,
             );
             self.registry.entries[idx].1.shutdown(&mut ctx);
@@ -447,6 +536,22 @@ mod tests {
         assert_eq!(
             dependency_waves(&order, &deps),
             vec![vec![0], vec![1, 2], vec![3]]
+        );
+    }
+
+    #[test]
+    fn access_waves_keep_independent_reads_together() {
+        static READS: [&str; 1] = ["position"];
+        let deps = vec![vec![], vec![], vec![]];
+        let order = vec![0, 1, 2];
+        let accesses = vec![
+            SystemAccess::read_only(&READS),
+            SystemAccess::read_only(&READS),
+            SystemAccess::read_write(&READS, &READS),
+        ];
+        assert_eq!(
+            access_waves(&order, &deps, &accesses),
+            vec![vec![0, 1], vec![2]]
         );
     }
 

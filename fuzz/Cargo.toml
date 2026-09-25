@@ -17,3 +17,24 @@ path = "fuzz_targets/scheduler_input.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "render_preparation"
+path = "fuzz_targets/render_preparation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "schedule_waves"
+path = "fuzz_targets/schedule_waves.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ecs_mutations"
+path = "fuzz_targets/ecs_mutations.rs"
+test = false
+doc = false
+bench = false

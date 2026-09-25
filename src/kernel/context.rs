@@ -7,6 +7,7 @@
 use core::marker::PhantomData;
 
 use crate::kernel::bus::{BusError, Envelope, MessageBus, SubscriberId};
+use crate::kernel::deferred::{DeferredCommandError, DeferredCommands};
 use crate::kernel::ecs::world::World;
 use crate::kernel::mem::arena::BumpArena;
 
@@ -16,6 +17,7 @@ pub struct KernelContext<'a> {
     /// Registry names, index == `SubscriberId` raw value.
     names: &'a [String],
     world: &'a mut World,
+    deferred: &'a mut DeferredCommands,
     /// Per-frame bump arena; the kernel rewinds it once per tick.
     arena: &'a mut BumpArena,
     id: SubscriberId,
@@ -30,12 +32,14 @@ impl<'a> KernelContext<'a> {
         id: SubscriberId,
         dt_ns: u64,
         world: &'a mut World,
+        deferred: &'a mut DeferredCommands,
         arena: &'a mut BumpArena,
     ) -> Self {
         Self {
             bus,
             names,
             world,
+            deferred,
             arena,
             id,
             dt_ns,
@@ -71,6 +75,23 @@ impl<'a> KernelContext<'a> {
     /// Exclusive write access to the engine world.
     pub fn world_write(&mut self) -> &mut World {
         &mut *self.world
+    }
+
+    /// Queues an entity spawn for the next structural commit boundary.
+    pub fn defer_spawn(&mut self) -> Result<(), DeferredCommandError> {
+        self.deferred.try_spawn()
+    }
+
+    /// Queues an entity despawn for the next structural commit boundary.
+    pub fn defer_despawn(
+        &mut self,
+        entity: crate::kernel::ecs::entity::Entity,
+    ) -> Result<(), DeferredCommandError> {
+        self.deferred.try_despawn(entity)
+    }
+
+    pub const fn deferred_len(&self) -> usize {
+        self.deferred.len()
     }
 
     /// Per-frame scratch bump arena (rewound by the kernel at frame start).

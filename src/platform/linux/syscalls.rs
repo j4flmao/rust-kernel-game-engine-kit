@@ -142,6 +142,12 @@ impl Fd {
         Ok(n as usize)
     }
 
+    /// Returns the owned descriptor for Linux APIs that accept a raw fd.
+    /// The caller must not close it or use it after this `Fd` is dropped.
+    pub const fn raw_fd(&self) -> i32 {
+        self.raw
+    }
+
     pub fn size_bytes(&self) -> Result<u64, SysError> {
         // SAFETY: lseek with SEEK_CUR queries the owned descriptor position.
         let current = unsafe { lseek(self.raw, 0, SEEK_CUR) };

@@ -1,7 +1,11 @@
 //! Owned Linux io_uring boundary for asynchronous asset reads.
 #![allow(unsafe_code)]
 
-use std::{ffi::c_void, io, ptr};
+use std::{
+    ffi::c_void,
+    io, ptr,
+    sync::atomic::{fence, Ordering},
+};
 
 const SYS_SETUP: usize = 425;
 const SYS_ENTER: usize = 426;
@@ -281,6 +285,10 @@ impl IoUring {
             self.sq_u32(self.params.sq_off.array)
                 .add(index as usize)
                 .write_volatile(index);
+            // Publish the SQE and array entry before exposing the new tail to
+            // the kernel. Volatile access alone does not provide a release
+            // ordering guarantee for shared kernel/user memory.
+            fence(Ordering::Release);
             tail_ptr.write_volatile(tail.wrapping_add(1));
         }
         self.pending.push(PendingRead { user_data, buffer });
@@ -316,8 +324,13 @@ impl IoUring {
             if head == tail {
                 return None;
             }
+            // Acquire the CQE contents after observing the kernel's tail.
+            fence(Ordering::Acquire);
             let index = head & self.cq_u32(self.params.cq_off.ring_mask).read_volatile();
             let entry = self.cqes().add(index as usize).read_volatile();
+            // Do not let the kernel reuse this CQ slot until the CQE has been
+            // fully consumed by this thread.
+            fence(Ordering::Release);
             head_ptr.write_volatile(head.wrapping_add(1));
             if let Some(position) = self
                 .pending

@@ -20,6 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Run repeated test cycles
         shell: bash
         run: |
@@ -32,14 +33,43 @@ jobs:
   extended-fuzz:
     name: extended scheduler fuzzing
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
         with:
           targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-fuzz
-      - run: cargo fuzz run --target x86_64-unknown-linux-gnu scheduler_input -- -runs=10000 -timeout=10 -max_total_time=600 -rss_limit_mb=2048
+      - name: Run extended fuzz targets
+        run: |
+          set -euo pipefail
+          for target in scheduler_input schedule_waves ecs_mutations render_preparation; do
+            cargo fuzz run --target x86_64-unknown-linux-gnu "$target" -- -runs=10000 -timeout=10 -max_total_time=600 -rss_limit_mb=2048
+          done
         working-directory: fuzz
+
+  soak-memory:
+    name: soak and memory stability
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Repeat engine tests with RSS telemetry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for cycle in $(seq 1 30); do
+            echo "soak cycle ${cycle}/30"
+            /usr/bin/time -v cargo test --lib --tests --all-features -- --test-threads=1 2>"time-${cycle}.log"
+            grep -E "Maximum resident set size|Exit status" "time-${cycle}.log" || true
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soak-memory-telemetry
+          path: time-*.log
+          if-no-files-found: error

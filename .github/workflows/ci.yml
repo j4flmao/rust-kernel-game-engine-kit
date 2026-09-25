@@ -25,6 +25,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+      - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
 
   linux:
@@ -35,18 +36,24 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: Swatinem/rust-cache@v2
       - run: cargo check --all-targets --all-features
       - run: cargo test --lib --tests --all-features -- --test-threads=1
       - run: cargo clippy --all-targets --all-features -- -D warnings
 
   windows:
     name: Windows PAL and engine tests
-    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: Swatinem/rust-cache@v2
       - run: cargo check --all-targets --all-features
       - run: cargo test --lib --tests --all-features -- --test-threads=1
       - run: cargo clippy --all-targets --all-features -- -D warnings
@@ -59,6 +66,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
       - run: cargo check --manifest-path kernel_nostd/Cargo.toml --target wasm32-unknown-unknown
 
   property-and-bench:
@@ -67,8 +75,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - run: cargo test --test property_harness --all-features
       - run: cargo bench --bench kernel
+      - name: Benchmark regression signal
+        run: cargo bench --bench kernel -- --noplot
       - name: Upload Criterion HTML report
         uses: actions/upload-artifact@v4
         with:
@@ -82,6 +93,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
       - run: cargo check --manifest-path fuzz/Cargo.toml
 
   security-audit:
@@ -104,12 +116,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-fuzz
       # cargo-fuzz may default to musl on Linux. ASan requires the dynamic
       # GNU target here, so make the target explicit and install its stdlib.
-      - run: cargo fuzz run --target x86_64-unknown-linux-gnu scheduler_input -- -runs=1000 -timeout=10 -max_total_time=60 -rss_limit_mb=2048
+      - name: Run bounded fuzz smoke targets
+        run: |
+          set -euo pipefail
+          for target in scheduler_input schedule_waves ecs_mutations render_preparation; do
+            cargo fuzz run --target x86_64-unknown-linux-gnu "$target" -- -runs=500 -timeout=10 -max_total_time=30 -rss_limit_mb=2048
+          done
         working-directory: fuzz
 
   miri:
@@ -120,6 +138,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
+      - uses: Swatinem/rust-cache@v2
       - run: cargo miri setup
       - run: cargo miri test --lib -- --test-threads=1
         env:
@@ -134,6 +153,41 @@ jobs:
         with:
           targets: x86_64-unknown-linux-gnu
           components: rust-src
+      - uses: Swatinem/rust-cache@v2
       - run: cargo test -Zbuild-std --lib --target x86_64-unknown-linux-gnu -- --test-threads=1
         env:
           RUSTFLAGS: "-Zsanitizer=address"
+
+  msrv:
+    name: MSRV check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --locked --all-targets --all-features
+
+  linux-io-uring:
+    name: Linux io_uring end-to-end
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --test linux_syscalls --all-features -- --test-threads=1
+      - run: cargo test --lib platform::linux::io_uring --all-features -- --test-threads=1
+
+  vulkan-lavapipe:
+    name: Vulkan lavapipe smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install lavapipe and Vulkan tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes mesa-vulkan-drivers vulkan-tools
+      - name: Enumerate software Vulkan device
+        run: vulkaninfo --summary
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --test phase4_headless --all-features -- --test-threads=1

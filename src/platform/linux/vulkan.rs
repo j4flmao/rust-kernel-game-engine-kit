@@ -675,6 +675,7 @@ pub unsafe fn cmd_draw_indexed_indirect_device(
 /// # Safety
 /// All handles must belong to the same live device and the command buffer must
 /// be recording. The caller must provide the required transfer barriers.
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn cmd_copy_buffer_device(
     loader: &VulkanLoader,
     device: VkDevice,
@@ -711,6 +712,7 @@ pub unsafe fn cmd_copy_buffer_device(
 ///
 /// # Safety
 /// `command` must be recording and `buffer` must belong to `device`.
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn cmd_buffer_barrier_device(
     loader: &VulkanLoader,
     device: VkDevice,

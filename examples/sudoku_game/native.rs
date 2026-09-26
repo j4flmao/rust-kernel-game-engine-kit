@@ -33,7 +33,7 @@ impl NativeInputBridge {
             let presenter = window
                 .as_ref()
                 .map(|window| Presenter::new(window.raw_handle()));
-            return Self {
+            Self {
                 window,
                 running,
                 snapshot,
@@ -41,7 +41,7 @@ impl NativeInputBridge {
                 input_events: Vec::with_capacity(32),
                 presenter,
                 last_painted: None,
-            };
+            }
         }
         #[cfg(not(windows))]
         {

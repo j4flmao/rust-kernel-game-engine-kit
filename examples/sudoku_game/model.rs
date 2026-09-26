@@ -159,11 +159,9 @@ fn count_solutions(grid: &mut [[u8; 9]; 9], limit: u8) -> u8 {
 }
 
 fn first_empty(grid: &[[u8; 9]; 9]) -> Option<(usize, usize)> {
-    for row in 0..9 {
-        for column in 0..9 {
-            if grid[row][column] == 0 {
-                return Some((row, column));
-            }
+    for (row, values) in grid.iter().enumerate() {
+        if let Some(column) = values.iter().position(|&value| value == 0) {
+            return Some((row, column));
         }
     }
     None

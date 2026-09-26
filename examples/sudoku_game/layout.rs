@@ -119,8 +119,8 @@ impl PlayingLayout {
         for index in 0..9 {
             let row = index / 3;
             let column = index % 3;
-            let left = self.control_x + column as i32 * (self.button_size + self.gap);
-            let top = self.control_y + row as i32 * (self.button_size + self.gap);
+            let left = self.control_x + column * (self.button_size + self.gap);
+            let top = self.control_y + row * (self.button_size + self.gap);
             if Self::contains(x, y, left, top, self.button_size, self.button_size) {
                 return Some(HitTarget::Digit((index + 1) as u8));
             }

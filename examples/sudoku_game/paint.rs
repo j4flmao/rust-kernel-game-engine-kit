@@ -37,9 +37,9 @@ impl NativeSnapshot {
         shake_offset: i32,
     ) -> Self {
         let mut states = [[0u8; 9]; 9];
-        for row in 0..9 {
-            for column in 0..9 {
-                states[row][column] = match session.states[row][column] {
+        for (state_row, session_row) in states.iter_mut().zip(session.states.iter()) {
+            for (state, session_state) in state_row.iter_mut().zip(session_row.iter()) {
+                *state = match session_state {
                     CellState::Empty => 0,
                     CellState::Given => 1,
                     CellState::Player => 2,
@@ -350,8 +350,8 @@ mod win32 {
         for index in 0..9 {
             let row = index / 3;
             let column = index % 3;
-            let left = layout.control_x + column as i32 * (layout.button_size + layout.gap);
-            let top = layout.control_y + row as i32 * (layout.button_size + layout.gap);
+            let left = layout.control_x + column * (layout.button_size + layout.gap);
+            let top = layout.control_y + row * (layout.button_size + layout.gap);
             button(
                 dc,
                 left,

@@ -1102,6 +1102,11 @@ pub unsafe fn cmd_draw_indexed_indirect_device(
 }
 
 /// Binds one UI vertex/instance buffer through the device dispatch table.
+///
+/// # Safety
+///
+/// The caller must provide a live device dispatch table, a recording command
+/// buffer, and a live vertex buffer whose range is valid for the command.
 pub unsafe fn cmd_bind_vertex_buffer_device(
     loader: &VulkanLoader,
     device: VkDevice,
@@ -1119,6 +1124,11 @@ pub unsafe fn cmd_bind_vertex_buffer_device(
 }
 
 /// Records one non-indexed UI draw through the device dispatch table.
+///
+/// # Safety
+///
+/// The caller must provide a live device dispatch table and a recording command
+/// buffer configured with a compatible graphics pipeline and resources.
 pub unsafe fn cmd_draw_device(
     loader: &VulkanLoader,
     device: VkDevice,
@@ -1322,6 +1332,11 @@ impl NativeDescriptorPool {
     }
 
     /// Allocates one descriptor set and binds the UI storage buffer to it.
+    ///
+    /// # Safety
+    ///
+    /// The caller must keep this pool, the layout, and the buffer alive and
+    /// compatible with the device while the descriptor set is in use.
     pub unsafe fn allocate_ui_set(
         &self,
         loader: &VulkanLoader,
@@ -1693,6 +1708,11 @@ impl LogicalDevice {
     }
 
     /// Creates an owned shader module from validated SPIR-V words.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the loader and logical device are live and that
+    /// `words` remains a valid SPIR-V module accepted by the device.
     pub unsafe fn create_shader_module(
         &self,
         loader: &VulkanLoader,
@@ -1729,6 +1749,11 @@ impl LogicalDevice {
 
     /// Creates the descriptor layout used by the UI vertex shader.
     /// Binding zero is a read-only storage buffer containing packed UI items.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the loader and logical device are live for the
+    /// duration of the Vulkan call and subsequent owned-resource lifetime.
     pub unsafe fn create_ui_descriptor_set_layout(
         &self,
         loader: &VulkanLoader,
@@ -1764,6 +1789,11 @@ impl LogicalDevice {
     }
 
     /// Creates a bounded one-set pool for the UI storage-buffer binding.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the loader and logical device are live for the
+    /// duration of the Vulkan call and subsequent owned-resource lifetime.
     pub unsafe fn create_ui_descriptor_pool(
         &self,
         loader: &VulkanLoader,
@@ -1798,6 +1828,11 @@ impl LogicalDevice {
 
     /// Creates the UI pipeline layout: one storage-buffer set and an 8-byte
     /// vertex push constant containing the viewport dimensions.
+    ///
+    /// # Safety
+    ///
+    /// The caller must provide a live descriptor-set layout created for this
+    /// device and keep it alive until the returned pipeline layout is dropped.
     pub unsafe fn create_ui_pipeline_layout(
         &self,
         loader: &VulkanLoader,
@@ -1838,6 +1873,13 @@ impl LogicalDevice {
 
     /// Records the backend-neutral UI graphics commands into an active
     /// framebuffer. Resource creation remains owned by the presentation lane.
+    ///
+    /// # Safety
+    ///
+    /// The caller must provide live, device-compatible Vulkan handles, an
+    /// active command buffer/render pass scope, and draw commands whose ranges
+    /// are valid for the bound descriptor and pipeline resources.
+    #[allow(clippy::too_many_arguments)]
     pub unsafe fn cmd_ui_draw(
         &self,
         loader: &VulkanLoader,
@@ -1924,6 +1966,11 @@ impl LogicalDevice {
     }
 
     /// Creates a 2D color view for one swapchain image.
+    ///
+    /// # Safety
+    ///
+    /// The caller must provide a live image belonging to this device and keep
+    /// it alive until the returned image view is dropped.
     pub unsafe fn create_color_image_view(
         &self,
         loader: &VulkanLoader,
@@ -1971,6 +2018,11 @@ impl LogicalDevice {
     }
 
     /// Creates the single-subpass color render pass used by the UI lane.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the loader and logical device are live for the
+    /// duration of the Vulkan call and subsequent owned-resource lifetime.
     pub unsafe fn create_ui_render_pass(
         &self,
         loader: &VulkanLoader,
@@ -2034,6 +2086,12 @@ impl LogicalDevice {
     }
 
     /// Creates one framebuffer for a color view and the UI render pass.
+    ///
+    /// # Safety
+    ///
+    /// The caller must provide live, compatible render-pass and image-view
+    /// handles belonging to this device and keep them alive until the returned
+    /// framebuffer is dropped.
     pub unsafe fn create_framebuffer(
         &self,
         loader: &VulkanLoader,
@@ -2075,6 +2133,12 @@ impl LogicalDevice {
     /// Builds the fixed-function UI pipeline for the validated SPIR-V pair.
     /// The UI shader uses no vertex attributes; item data is read from the
     /// descriptor-backed storage buffer and expanded into instanced quads.
+    ///
+    /// # Safety
+    ///
+    /// The caller must provide live, compatible shader modules, pipeline
+    /// layout, render pass, and logical device handles, and keep those parent
+    /// resources alive until the returned pipeline is dropped.
     pub unsafe fn create_ui_graphics_pipeline(
         &self,
         loader: &VulkanLoader,

@@ -2628,8 +2628,8 @@ impl VulkanLoader {
     ) -> Result<T, VulkanLoaderError> {
         let pointer = unsafe { self.instance_proc(instance, name) }.ok_or_else(|| {
             VulkanLoaderError::MissingEntry(DlError::Symbol {
-                symbol: String::from_utf8_lossy(name).into_owned(),
-                code: 0,
+                lib: self.library_name().to_owned(),
+                name: String::from_utf8_lossy(name).into_owned(),
             })
         })?;
         Ok(unsafe { core::mem::transmute_copy(&pointer) })

@@ -1036,6 +1036,11 @@ impl NativeDescriptorPool {
     }
 
     /// Allocates one descriptor set and binds the UI storage buffer to it.
+    ///
+    /// # Safety
+    /// `loader` must dispatch to the live `self.device`; `layout` and `buffer`
+    /// must be valid handles owned by that device, and `range` must describe a
+    /// readable range in `buffer`.
     pub unsafe fn allocate_ui_set(
         &self,
         loader: &VulkanLoader,
@@ -1528,6 +1533,10 @@ pub unsafe fn cmd_draw_indexed_indirect_device(
 
 /// Binds one UI vertex/instance buffer through the device dispatch table.
 /// The caller must have a compatible graphics pipeline bound.
+///
+/// # Safety
+/// `loader`, `device`, `command`, and `buffer` must refer to live Vulkan
+/// objects from the same device, and `command` must be recording.
 pub unsafe fn cmd_bind_vertex_buffer_device(
     loader: &VulkanLoader,
     device: VkDevice,
@@ -1547,6 +1556,10 @@ pub unsafe fn cmd_bind_vertex_buffer_device(
 /// Records one non-indexed UI draw through the device dispatch table.
 /// Validation rejects zero work, while Vulkan pipeline compatibility remains
 /// the responsibility of the renderer pipeline contract.
+///
+/// # Safety
+/// `loader`, `device`, and `command` must refer to a live compatible Vulkan
+/// device and recording command buffer.
 pub unsafe fn cmd_draw_device(
     loader: &VulkanLoader,
     device: VkDevice,
@@ -1728,6 +1741,10 @@ impl LogicalDevice {
     }
 
     /// Creates an owned shader module from validated SPIR-V words.
+    ///
+    /// # Safety
+    /// `loader` must dispatch through this live device, and `words` must be a
+    /// valid SPIR-V module accepted by the device for the duration of the call.
     pub unsafe fn create_shader_module(
         &self,
         loader: &VulkanLoader,
@@ -1762,6 +1779,9 @@ impl LogicalDevice {
         })
     }
 
+    /// # Safety
+    /// `loader` must dispatch through this live device and the Vulkan loader
+    /// ABI must match the function pointers returned by it.
     pub unsafe fn create_ui_descriptor_set_layout(
         &self,
         loader: &VulkanLoader,
@@ -1797,6 +1817,10 @@ impl LogicalDevice {
     }
 
     /// Creates a bounded one-set pool for the UI storage-buffer binding.
+    ///
+    /// # Safety
+    /// `loader` must dispatch through this live device and the Vulkan loader
+    /// ABI must match the function pointers returned by it.
     pub unsafe fn create_ui_descriptor_pool(
         &self,
         loader: &VulkanLoader,
@@ -1829,6 +1853,9 @@ impl LogicalDevice {
         })
     }
 
+    /// # Safety
+    /// `loader` must dispatch through this live device and `descriptor_set_layout`
+    /// must be a live compatible descriptor-set layout owned by this device.
     pub unsafe fn create_ui_pipeline_layout(
         &self,
         loader: &VulkanLoader,
@@ -1870,6 +1897,12 @@ impl LogicalDevice {
 
     /// Records the backend-neutral UI graphics commands into an active
     /// framebuffer. Resource creation remains owned by the presentation lane.
+    ///
+    /// # Safety
+    /// All Vulkan handles and the command buffer must be live and owned by this
+    /// device; the command buffer must be recording, and every draw command
+    /// must be compatible with the bound UI pipeline and descriptor set.
+    #[allow(clippy::too_many_arguments)]
     pub unsafe fn cmd_ui_draw(
         &self,
         loader: &VulkanLoader,
@@ -1955,6 +1988,9 @@ impl LogicalDevice {
         Ok(())
     }
 
+    /// # Safety
+    /// `loader` must dispatch through this live device and `image` must be a
+    /// live image owned by it with a format compatible with `format`.
     pub unsafe fn create_color_image_view(
         &self,
         loader: &VulkanLoader,
@@ -2001,6 +2037,9 @@ impl LogicalDevice {
         })
     }
 
+    /// # Safety
+    /// `loader` must dispatch through this live device and `format` must be a
+    /// supported color format for the target presentation surface.
     pub unsafe fn create_ui_render_pass(
         &self,
         loader: &VulkanLoader,
@@ -2063,6 +2102,10 @@ impl LogicalDevice {
         })
     }
 
+    /// # Safety
+    /// `loader` must dispatch through this live device; `render_pass` and
+    /// `image_view` must be compatible live handles, and `extent` must match
+    /// the attachment dimensions.
     pub unsafe fn create_framebuffer(
         &self,
         loader: &VulkanLoader,
@@ -2101,6 +2144,9 @@ impl LogicalDevice {
         })
     }
 
+    /// # Safety
+    /// `loader` must dispatch through this live device; all shader, layout, and
+    /// render-pass handles must be live and compatible with `extent`.
     pub unsafe fn create_ui_graphics_pipeline(
         &self,
         loader: &VulkanLoader,

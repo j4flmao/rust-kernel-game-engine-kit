@@ -56,7 +56,9 @@ use game::SudokuGame;
 use input::{action_from_key, GameAction};
 use layout::{DifficultyChoice, HitTarget, MenuAction, PlayingAction, Screen, TopAction};
 use native::NativeInputBridge;
-use paint::{NativeSnapshot, Presenter};
+use paint::NativeSnapshot;
+#[cfg(windows)]
+use paint::Presenter;
 use ui::{build_board, BoardUi};
 
 const WIDTH: u32 = 900;

@@ -6,7 +6,9 @@ type NativeWindow = rust_kernel_game_engine_kit::platform::windows::window::Win3
 type NativeWindow = ();
 
 pub(crate) struct NativeInputBridge {
+    #[cfg(windows)]
     running: Arc<AtomicBool>,
+    #[cfg(windows)]
     snapshot: Arc<std::sync::Mutex<NativeSnapshot>>,
     #[cfg(windows)]
     window: Option<NativeWindow>,
@@ -44,7 +46,8 @@ impl NativeInputBridge {
         #[cfg(not(windows))]
         {
             let _ = window;
-            Self { running, snapshot }
+            let _ = (running, snapshot);
+            Self {}
         }
     }
 }
@@ -60,13 +63,13 @@ impl Subsystem for NativeInputBridge {
 
     fn init(&mut self, _ctx: &mut KernelContext<'_>) {}
 
-    fn tick(&mut self, ctx: &mut KernelContext<'_>, _dt_ns: u64) {
+    fn tick(&mut self, _ctx: &mut KernelContext<'_>, _dt_ns: u64) {
         #[cfg(windows)]
         if let Some(window) = &self.window {
             window.poll_events(&mut self.window_events, &mut self.input_events);
-            if let Some(input) = ctx.resolve("input") {
+            if let Some(input) = _ctx.resolve("input") {
                 for event in self.input_events.drain(..) {
-                    let _ = ctx.publish(input, 4, InputEventMessage(event));
+                    let _ = _ctx.publish(input, 4, InputEventMessage(event));
                 }
             }
             if std::env::var_os("RKE_DISABLE_GDI").is_none() {
@@ -83,11 +86,11 @@ impl Subsystem for NativeInputBridge {
                         width: size.width,
                         height: size.height,
                     };
-                    if let Some(ui) = ctx.resolve("ui") {
-                        let _ = ctx.publish(ui, 1, message);
+                    if let Some(ui) = _ctx.resolve("ui") {
+                        let _ = _ctx.publish(ui, 1, message);
                     }
-                    if let Some(renderer) = ctx.resolve("renderer") {
-                        let _ = ctx.publish(renderer, 1, message);
+                    if let Some(renderer) = _ctx.resolve("renderer") {
+                        let _ = _ctx.publish(renderer, 1, message);
                     }
                 } else if matches!(event, WindowEvent::CloseRequested) {
                     self.running.store(false, Ordering::Release);

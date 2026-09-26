@@ -2,17 +2,12 @@
 
 use super::id::{FontId, TextureId};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum UiLength {
+    #[default]
     Auto,
     Points(f32),
     Percent(f32),
-}
-
-impl Default for UiLength {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 impl UiLength {
@@ -118,55 +113,38 @@ impl UiRect {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum UiDirection {
     Row,
+    #[default]
     Column,
 }
 
-impl Default for UiDirection {
-    fn default() -> Self {
-        Self::Column
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum UiAlign {
+    #[default]
     Start,
     Center,
     End,
     Stretch,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum UiOverflow {
+    #[default]
     Visible,
     Clip,
     Scroll,
 }
 
-impl Default for UiOverflow {
-    fn default() -> Self {
-        Self::Visible
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum UiPosition {
+    #[default]
     Flow,
-    Absolute { left: f32, top: f32 },
-}
-
-impl Default for UiPosition {
-    fn default() -> Self {
-        Self::Flow
-    }
-}
-
-impl Default for UiAlign {
-    fn default() -> Self {
-        Self::Start
-    }
+    Absolute {
+        left: f32,
+        top: f32,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -242,7 +220,7 @@ impl UiStyle {
             }
             && self.background.iter().all(|v| v.is_finite())
             && self.border.iter().all(|v| v.is_finite())
-            && self.gradient.map_or(true, |(from, to)| {
+            && self.gradient.is_none_or(|(from, to)| {
                 from.iter().chain(to.iter()).all(|value| value.is_finite())
             })
             && self.corner_radius.is_finite()

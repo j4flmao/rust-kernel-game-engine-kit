@@ -433,14 +433,3 @@ mod win32 {
 
 #[cfg(windows)]
 pub(crate) use win32::Presenter;
-
-#[cfg(not(windows))]
-pub(crate) struct Presenter;
-
-#[cfg(not(windows))]
-impl Presenter {
-    pub(crate) fn new<T>(_window: &T) -> Self {
-        Self
-    }
-    pub(crate) fn paint(&self, _frame: &NativeSnapshot) {}
-}

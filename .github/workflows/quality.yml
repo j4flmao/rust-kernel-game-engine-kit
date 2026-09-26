@@ -1,0 +1,43 @@
+name: quality gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  docs-and-examples:
+    name: docs and example contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c
+      - name: Validate locked metadata
+        run: cargo metadata --locked --all-features --format-version 1 --no-deps
+      - name: Run documentation tests
+        run: cargo test --locked --doc --all-features
+      - name: Build rustdoc with warnings denied
+        run: cargo doc --locked --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+      - name: Build native examples
+        run: cargo build --locked --release --examples
+      - name: Run Sudoku example contract tests
+        run: cargo test --locked --example sudoku_game --all-features
+

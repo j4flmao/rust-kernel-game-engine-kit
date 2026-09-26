@@ -3,13 +3,14 @@
 use std::collections::VecDeque;
 
 use crate::kernel::{KernelContext, Subsystem};
-use crate::subsystems::messages::InputFrame;
+use crate::subsystems::messages::{InputEventMessage, InputFrame};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InputEvent {
     Key { key: u32, pressed: bool },
     MouseButton { button: u8, pressed: bool },
     MouseMoved { x: i32, y: i32 },
+    TextByte { byte: u8 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -17,11 +18,25 @@ pub enum InputError {
     AllocationFailed,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InputSnapshot {
     keys: Vec<u32>,
     mouse_buttons: u16,
     mouse_position: (i32, i32),
+    text: [u8; 64],
+    text_count: u8,
+}
+
+impl Default for InputSnapshot {
+    fn default() -> Self {
+        Self {
+            keys: Vec::new(),
+            mouse_buttons: 0,
+            mouse_position: (0, 0),
+            text: [0; 64],
+            text_count: 0,
+        }
+    }
 }
 
 impl InputSnapshot {
@@ -33,6 +48,12 @@ impl InputSnapshot {
     }
     pub fn mouse_position(&self) -> (i32, i32) {
         self.mouse_position
+    }
+    pub fn keys(&self) -> &[u32] {
+        &self.keys
+    }
+    pub fn text(&self) -> &[u8] {
+        &self.text[..usize::from(self.text_count)]
     }
 
     fn try_apply(&mut self, event: InputEvent) -> Result<(), InputError> {
@@ -59,6 +80,13 @@ impl InputSnapshot {
             }
             InputEvent::MouseButton { .. } => {}
             InputEvent::MouseMoved { x, y } => self.mouse_position = (x, y),
+            InputEvent::TextByte { byte } => {
+                let index = usize::from(self.text_count);
+                if index < self.text.len() {
+                    self.text[index] = byte;
+                    self.text_count = self.text_count.saturating_add(1);
+                }
+            }
         }
         Ok(())
     }
@@ -91,6 +119,7 @@ impl HeadlessInput {
     }
 
     pub fn try_advance(&mut self) -> Result<&InputSnapshot, InputError> {
+        self.current.text_count = 0;
         while let Some(&event) = self.pending.front() {
             self.current.try_apply(event)?;
             self.pending.pop_front();
@@ -105,13 +134,19 @@ impl HeadlessInput {
 
 pub struct InputSubsystem {
     input: HeadlessInput,
+    previous_mouse_buttons: u16,
+    previous_keys: Vec<u32>,
 }
 
 impl Default for InputSubsystem {
     fn default() -> Self {
         let mut input = HeadlessInput::default();
         input.current.keys.reserve(32);
-        Self { input }
+        Self {
+            input,
+            previous_mouse_buttons: 0,
+            previous_keys: Vec::with_capacity(32),
+        }
     }
 }
 
@@ -133,25 +168,77 @@ impl Subsystem for InputSubsystem {
     }
     fn init(&mut self, _ctx: &mut KernelContext<'_>) {}
     fn tick(&mut self, ctx: &mut KernelContext<'_>, _dt_ns: u64) {
-        let _ = self.input.advance();
-        if let Some(physics) = ctx.resolve("physics") {
-            let snapshot = self.input.snapshot();
-            let (mouse_x, mouse_y) = snapshot.mouse_position();
-            let mut buttons = 0u16;
-            for button in 0..16 {
-                if snapshot.mouse_button_down(button) {
-                    buttons |= 1u16 << button;
+        for envelope in ctx.receive() {
+            if envelope.topic == 4 {
+                if let Ok(message) = envelope.downcast::<InputEventMessage>() {
+                    let _ = self.input.try_push(message.0);
                 }
             }
-            let _ = ctx.publish(
-                physics,
-                2,
-                InputFrame {
-                    mouse_x,
-                    mouse_y,
-                    mouse_buttons: buttons,
-                },
-            );
+        }
+        let _ = self.input.advance();
+        let snapshot = self.input.snapshot();
+        let (mouse_x, mouse_y) = snapshot.mouse_position();
+        let mut buttons = 0u16;
+        for button in 0..16 {
+            if snapshot.mouse_button_down(button) {
+                buttons |= 1u16 << button;
+            }
+        }
+        let pressed_buttons = buttons & !self.previous_mouse_buttons;
+        let released_buttons = self.previous_mouse_buttons & !buttons;
+        self.previous_mouse_buttons = buttons;
+        let mut keys = [0u32; 32];
+        let key_count = self.input.snapshot().keys().len().min(keys.len());
+        keys[..key_count].copy_from_slice(&self.input.snapshot().keys()[..key_count]);
+        let mut pressed_keys = [0u32; 32];
+        let mut pressed_key_count = 0usize;
+        for key in self.input.snapshot().keys() {
+            if !self.previous_keys.contains(key) && pressed_key_count < pressed_keys.len() {
+                pressed_keys[pressed_key_count] = *key;
+                pressed_key_count += 1;
+            }
+        }
+        let mut released_keys = [0u32; 32];
+        let mut released_key_count = 0usize;
+        for key in &self.previous_keys {
+            if !self.input.snapshot().keys().contains(key)
+                && released_key_count < released_keys.len()
+            {
+                released_keys[released_key_count] = *key;
+                released_key_count += 1;
+            }
+        }
+        self.previous_keys.clear();
+        self.previous_keys
+            .extend_from_slice(self.input.snapshot().keys());
+        let frame = InputFrame {
+            mouse_x,
+            mouse_y,
+            mouse_buttons: buttons,
+            pressed_buttons,
+            released_buttons,
+            key_count: u8::try_from(key_count).unwrap_or(32),
+            keys,
+            pressed_key_count: u8::try_from(pressed_key_count).unwrap_or(32),
+            pressed_keys,
+            released_key_count: u8::try_from(released_key_count).unwrap_or(32),
+            released_keys,
+            text_count: u8::try_from(snapshot.text().len()).unwrap_or(64),
+            text: {
+                let mut text = [0u8; 64];
+                let count = snapshot.text().len().min(text.len());
+                text[..count].copy_from_slice(&snapshot.text()[..count]);
+                text
+            },
+        };
+        if let Some(ui) = ctx.resolve("ui") {
+            let _ = ctx.publish(ui, 2, frame);
+        }
+        if let Some(physics) = ctx.resolve("physics") {
+            let _ = ctx.publish(physics, 2, frame);
+        }
+        if let Some(game) = ctx.resolve("sudoku-game") {
+            let _ = ctx.publish(game, 2, frame);
         }
     }
     fn shutdown(&mut self, _ctx: &mut KernelContext<'_>) {}
@@ -198,5 +285,14 @@ mod tests {
         let snapshot = input.advance();
         assert!(!snapshot.key_down(7));
         assert!(!snapshot.mouse_button_down(16));
+    }
+
+    #[test]
+    fn text_input_is_bounded_to_one_frame() {
+        let mut input = HeadlessInput::default();
+        input.push(InputEvent::TextByte { byte: b'A' });
+        input.push(InputEvent::TextByte { byte: b'B' });
+        assert_eq!(input.advance().text(), b"AB");
+        assert!(input.advance().text().is_empty());
     }
 }

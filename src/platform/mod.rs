@@ -8,6 +8,9 @@
 pub mod linux;
 pub mod thread_pool;
 pub mod vulkan_policy;
+pub mod ui_shaders {
+    include!(concat!(env!("OUT_DIR"), "/ui_shaders.rs"));
+}
 #[cfg(target_os = "linux")]
 pub use linux::present;
 #[cfg(target_os = "windows")]

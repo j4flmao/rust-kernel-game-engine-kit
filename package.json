@@ -2,9 +2,12 @@
   "name": "rust-kernel-game-engine-kit",
   "private": true,
   "scripts": {
-    "prepare": "husky"
+    "prepare": "husky",
+    "commitlint": "commitlint --config commitlint.json --from=HEAD~1 --to=HEAD"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.3",
+    "@commitlint/config-conventional": "^21.2.3",
     "husky": "^9.1.7"
   }
 }

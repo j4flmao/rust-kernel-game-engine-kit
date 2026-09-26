@@ -1,5 +1,23 @@
 #!/usr/bin/env sh
 
+set -eu
+
+# A release tag is valid only when it points to the current main commit.
+# The server-side release workflow repeats this check as the authoritative
+# guard, so a local tag cannot be pushed accidentally from a feature branch.
+while read -r local_ref local_oid remote_ref remote_oid; do
+    case "$local_ref" in
+        refs/tags/v*)
+            main_oid="$(git ls-remote --heads origin main | awk '{print $1}')"
+            if [ -z "$main_oid" ] || [ "$local_oid" != "$main_oid" ]; then
+                echo "Release tags must point to the current origin/main commit." >&2
+                echo "Push main first, then create and push the version tag." >&2
+                exit 1
+            fi
+            ;;
+    esac
+done
+
 cargo check --all-targets --all-features
 cargo test --lib --tests --all-features -- --test-threads=1
 cargo audit

@@ -1,5 +1,6 @@
 {
   "hooks": {
+    "commit-msg": "npx --no -- commitlint --config commitlint.json --edit $1",
     "pre-commit": "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings",
     "pre-push": "cargo check --all-targets --all-features && cargo test --lib --tests --all-features -- --test-threads=1 && cargo audit"
   }

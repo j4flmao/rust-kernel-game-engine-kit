@@ -10,6 +10,7 @@ use crate::kernel::ecs::world::World;
 use crate::kernel::{KernelContext, Subsystem};
 use crate::platform::vulkan_policy::{select_queue_families, QueueFamilyInfo, QueueSelection};
 use crate::subsystems::messages::WindowResized;
+use crate::subsystems::ui::{UiFramePacket, UiFrameReady, UiRenderSnapshot, UiUploadRange};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GpuCandidate {
@@ -569,6 +570,87 @@ pub struct RenderSubmissionStats {
     pub submitted_frames: u64,
     pub submitted_instances: u64,
     pub submitted_commands: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UiCommandPlan {
+    pub item_count: u32,
+    pub draw_count: u32,
+    pub upload_bytes: usize,
+}
+
+/// Backend-neutral instanced draw command for one legal UI batch.
+///
+/// The native Vulkan lane can translate this directly to `vkCmdDraw` after
+/// binding the UI pipeline. Keeping the command here makes the ordering and
+/// bounds checks testable without requiring a live window or GPU.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UiDrawCommand {
+    pub vertex_count: u32,
+    pub instance_count: u32,
+    pub first_vertex: u32,
+    pub first_instance: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UiCommandPlanError {
+    InvalidBatch,
+    IndexOverflow,
+}
+
+impl UiCommandPlan {
+    pub fn try_build(snapshot: &UiRenderSnapshot) -> Result<Self, UiCommandPlanError> {
+        let item_count =
+            u32::try_from(snapshot.items.len()).map_err(|_| UiCommandPlanError::IndexOverflow)?;
+        let draw_count =
+            u32::try_from(snapshot.batches.len()).map_err(|_| UiCommandPlanError::IndexOverflow)?;
+        let mut expected_first = 0u32;
+        for batch in &snapshot.batches {
+            if batch.count == 0 || batch.first != expected_first {
+                return Err(UiCommandPlanError::InvalidBatch);
+            }
+            let end = batch
+                .first
+                .checked_add(batch.count)
+                .ok_or(UiCommandPlanError::IndexOverflow)?;
+            if end > item_count {
+                return Err(UiCommandPlanError::InvalidBatch);
+            }
+            expected_first = end;
+        }
+        if expected_first != item_count {
+            return Err(UiCommandPlanError::InvalidBatch);
+        }
+        Ok(Self {
+            item_count,
+            draw_count,
+            upload_bytes: snapshot.upload.upload_bytes,
+        })
+    }
+
+    /// Converts validated UI batches into the exact instanced draw stream.
+    ///
+    /// Every batch uses the six-vertex unit quad from `shaders/ui.vert`.
+    /// Batches remain separate so clip, texture, font, z-order, and paint
+    /// boundaries cannot be accidentally merged by a backend.
+    pub fn build_draw_commands(
+        snapshot: &UiRenderSnapshot,
+    ) -> Result<Vec<UiDrawCommand>, UiCommandPlanError> {
+        let plan = Self::try_build(snapshot)?;
+        let mut commands = Vec::new();
+        commands
+            .try_reserve_exact(plan.draw_count as usize)
+            .map_err(|_| UiCommandPlanError::IndexOverflow)?;
+        for batch in &snapshot.batches {
+            commands.push(UiDrawCommand {
+                vertex_count: 6,
+                instance_count: batch.count,
+                first_vertex: 0,
+                first_instance: batch.first,
+            });
+        }
+        Ok(commands)
+    }
 }
 
 /// Backend boundary shared by headless, native Vulkan, and test backends.
@@ -1215,6 +1297,10 @@ pub struct RendererSubsystem {
     last_extraction: Option<ExtractionStats>,
     extraction_overflowed: bool,
     manifest_overflowed: bool,
+    last_ui_frame: Option<UiFrameReady>,
+    last_ui_packet: Option<UiFramePacket>,
+    last_ui_command_plan: Option<UiCommandPlan>,
+    last_ui_draw_commands: Option<Vec<UiDrawCommand>>,
 }
 
 struct NativeLane {
@@ -1227,10 +1313,34 @@ impl NativeLane {
     fn submit(
         &mut self,
         preparation: &GpuFramePreparation,
+        ui: Option<&UiCommandPlan>,
+        ui_commands: Option<&[UiDrawCommand]>,
+        ui_ranges: Option<&[UiUploadRange]>,
+        ui_upload_bytes: Option<usize>,
     ) -> Result<RenderSubmissionStats, RenderSubmitError> {
         preparation
             .validate()
             .map_err(|_| RenderSubmitError::InvalidPreparation)?;
+        if let (Some(plan), Some(commands), Some(ranges), Some(total_bytes)) =
+            (ui, ui_commands, ui_ranges, ui_upload_bytes)
+        {
+            self.engine
+                .set_ui_upload_ranges(ranges, total_bytes)
+                .map_err(|_| RenderSubmitError::Unsupported)?;
+            if commands.len() != plan.draw_count as usize {
+                return Err(RenderSubmitError::InvalidPreparation);
+            }
+            self.engine
+                .set_ui_draw_commands(commands)
+                .map_err(|_| RenderSubmitError::Unsupported)?;
+        } else {
+            self.engine
+                .set_ui_upload(&[])
+                .map_err(|_| RenderSubmitError::Unsupported)?;
+            self.engine
+                .set_ui_draw_commands(&[])
+                .map_err(|_| RenderSubmitError::Unsupported)?;
+        }
         match self.engine.present_frame() {
             Ok(crate::platform::present::PresentStatus::Presented) => Ok(RenderSubmissionStats {
                 submitted_frames: 1,
@@ -1263,6 +1373,10 @@ impl RendererSubsystem {
             last_extraction: None,
             extraction_overflowed: false,
             manifest_overflowed: false,
+            last_ui_frame: None,
+            last_ui_packet: None,
+            last_ui_command_plan: None,
+            last_ui_draw_commands: None,
         }
     }
 
@@ -1293,6 +1407,10 @@ impl RendererSubsystem {
             last_extraction: None,
             extraction_overflowed: false,
             manifest_overflowed: false,
+            last_ui_frame: None,
+            last_ui_packet: None,
+            last_ui_command_plan: None,
+            last_ui_draw_commands: None,
         }
     }
 
@@ -1368,6 +1486,18 @@ impl RendererSubsystem {
     pub const fn extraction_overflowed(&self) -> bool {
         self.extraction_overflowed
     }
+
+    pub const fn last_ui_frame(&self) -> Option<UiFrameReady> {
+        self.last_ui_frame
+    }
+
+    pub fn last_ui_packet(&self) -> Option<&UiFramePacket> {
+        self.last_ui_packet.as_ref()
+    }
+
+    pub const fn last_ui_command_plan(&self) -> Option<UiCommandPlan> {
+        self.last_ui_command_plan
+    }
 }
 
 impl Default for RendererSubsystem {
@@ -1382,7 +1512,7 @@ impl Subsystem for RendererSubsystem {
     }
 
     fn dependencies(&self) -> &'static [&'static str] {
-        &["window"]
+        &["window", "ui"]
     }
 
     fn init(&mut self, _ctx: &mut KernelContext<'_>) {
@@ -1393,6 +1523,26 @@ impl Subsystem for RendererSubsystem {
     fn tick(&mut self, ctx: &mut KernelContext<'_>, dt_ns: u64) {
         if self.state != RendererState::Ready {
             return;
+        }
+        for envelope in ctx.receive() {
+            if envelope.topic == 1 {
+                if let Ok(resize) = envelope.downcast::<WindowResized>() {
+                    self.last_resize = Some((resize.width, resize.height));
+                    #[cfg(any(target_os = "linux", target_os = "windows"))]
+                    self.recreate_native(crate::platform::present::PresentSize {
+                        width: resize.width,
+                        height: resize.height,
+                    });
+                }
+            } else if envelope.topic == 2 {
+                if let Ok(packet) = envelope.downcast::<UiFramePacket>() {
+                    self.last_ui_frame = Some(packet.ready);
+                    self.last_ui_command_plan = UiCommandPlan::try_build(&packet.snapshot).ok();
+                    self.last_ui_draw_commands =
+                        UiCommandPlan::build_draw_commands(&packet.snapshot).ok();
+                    self.last_ui_packet = Some(*packet);
+                }
+            }
         }
         match self.render_world.extract_typed(ctx.world_read()) {
             Ok(stats) => {
@@ -1405,7 +1555,21 @@ impl Subsystem for RendererSubsystem {
                 }
                 if !self.manifest_overflowed {
                     if let Some(lane) = &mut self.native {
-                        match lane.submit(&self.gpu_preparation) {
+                        let ui_ranges = self
+                            .last_ui_packet
+                            .as_ref()
+                            .map(|packet| packet.upload_ranges.as_slice());
+                        let ui_upload_bytes = self
+                            .last_ui_packet
+                            .as_ref()
+                            .map(|packet| packet.snapshot.upload.upload_bytes);
+                        match lane.submit(
+                            &self.gpu_preparation,
+                            self.last_ui_command_plan.as_ref(),
+                            self.last_ui_draw_commands.as_deref(),
+                            ui_ranges,
+                            ui_upload_bytes,
+                        ) {
                             Ok(stats) => self.last_submission = Some(stats),
                             Err(RenderSubmitError::OutOfDate) => {
                                 let _ = lane.engine.recreate(lane.size);
@@ -1422,18 +1586,6 @@ impl Subsystem for RendererSubsystem {
                 self.manifest_overflowed = true;
             }
         }
-        for envelope in ctx.receive() {
-            if envelope.topic == 1 {
-                if let Ok(resize) = envelope.downcast::<WindowResized>() {
-                    self.last_resize = Some((resize.width, resize.height));
-                    #[cfg(any(target_os = "linux", target_os = "windows"))]
-                    self.recreate_native(crate::platform::present::PresentSize {
-                        width: resize.width,
-                        height: resize.height,
-                    });
-                }
-            }
-        }
         self.stats.frames = self.stats.frames.saturating_add(1);
         self.stats.total_dt_ns = self.stats.total_dt_ns.saturating_add(u128::from(dt_ns));
     }
@@ -1448,6 +1600,115 @@ impl Subsystem for RendererSubsystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::subsystems::ui::paint::UiRenderItem;
+    use crate::subsystems::ui::{ClipId, UiBatch, UiBatchKey, UiUploadPlan};
+
+    #[test]
+    fn ui_batches_translate_to_bounded_instanced_draws() {
+        let snapshot = UiRenderSnapshot {
+            items: vec![
+                UiRenderItem {
+                    node: crate::subsystems::ui::UiNodeId::new(0, 0),
+                    rect: crate::subsystems::ui::UiRect::zero(),
+                    clip_rect: crate::subsystems::ui::UiRect::zero(),
+                    color: [1.0; 4],
+                    clip: ClipId(0),
+                    z_index: 0,
+                    opacity: 1.0,
+                    kind: 0,
+                    texture: None,
+                    font: None,
+                    glyph_count: 0,
+                    glyph_offset: 0,
+                };
+                3
+            ],
+            batches: vec![UiBatch {
+                key: UiBatchKey {
+                    pass: 0,
+                    clip: ClipId(0),
+                    texture: None,
+                    font: None,
+                    z_index: 0,
+                    kind: 0,
+                },
+                first: 0,
+                count: 3,
+            }],
+            glyphs: Vec::new(),
+            upload: UiUploadPlan::default(),
+        };
+        let commands = UiCommandPlan::build_draw_commands(&snapshot).unwrap();
+        assert_eq!(
+            commands,
+            vec![UiDrawCommand {
+                vertex_count: 6,
+                instance_count: 3,
+                first_vertex: 0,
+                first_instance: 0,
+            }]
+        );
+    }
+
+    #[test]
+    fn ui_command_plan_rejects_batch_gaps_and_overlaps() {
+        let item = UiRenderItem {
+            node: crate::subsystems::ui::UiNodeId::new(0, 0),
+            rect: crate::subsystems::ui::UiRect::zero(),
+            clip_rect: crate::subsystems::ui::UiRect::zero(),
+            color: [1.0; 4],
+            clip: ClipId(0),
+            z_index: 0,
+            opacity: 1.0,
+            kind: 0,
+            texture: None,
+            font: None,
+            glyph_count: 0,
+            glyph_offset: 0,
+        };
+        let base = UiRenderSnapshot {
+            items: vec![item; 2],
+            batches: vec![
+                UiBatch {
+                    key: UiBatchKey {
+                        pass: 0,
+                        clip: ClipId(0),
+                        texture: None,
+                        font: None,
+                        z_index: 0,
+                        kind: 0,
+                    },
+                    first: 0,
+                    count: 1,
+                },
+                UiBatch {
+                    key: UiBatchKey {
+                        pass: 0,
+                        clip: ClipId(0),
+                        texture: None,
+                        font: None,
+                        z_index: 0,
+                        kind: 0,
+                    },
+                    first: 2,
+                    count: 1,
+                },
+            ],
+            glyphs: Vec::new(),
+            upload: UiUploadPlan::default(),
+        };
+        assert_eq!(
+            UiCommandPlan::try_build(&base),
+            Err(UiCommandPlanError::InvalidBatch)
+        );
+
+        let mut overlap = base;
+        overlap.batches[1].first = 0;
+        assert_eq!(
+            UiCommandPlan::try_build(&overlap),
+            Err(UiCommandPlanError::InvalidBatch)
+        );
+    }
     use crate::platform::vulkan_policy::{QUEUE_COMPUTE, QUEUE_GRAPHICS, QUEUE_TRANSFER};
 
     #[test]
@@ -1455,7 +1716,7 @@ mod tests {
         let renderer = RendererSubsystem::new();
         assert_eq!(renderer.state(), RendererState::New);
         assert_eq!(renderer.stats(), RenderStats::default());
-        assert_eq!(renderer.dependencies(), &["window"]);
+        assert_eq!(renderer.dependencies(), &["window", "ui"]);
         assert_eq!(renderer.render_world().max_instances(), 4096);
     }
 

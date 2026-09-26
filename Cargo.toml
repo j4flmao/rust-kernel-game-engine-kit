@@ -5,6 +5,10 @@ edition = "2021"
 rust-version = "1.95"
 description = "Microkernel-style game engine core in Rust."
 license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/j4flmao/rust-kernel-game-engine-kit"
+keywords = ["game-engine", "ecs", "kernel", "runtime", "rust"]
+categories = ["game-engines", "os"]
 
 [features]
 default = []

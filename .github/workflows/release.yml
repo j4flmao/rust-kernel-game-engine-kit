@@ -36,7 +36,6 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
-      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c
       - name: Require tag commit to be on main
         shell: bash
         run: |

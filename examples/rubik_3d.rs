@@ -28,6 +28,7 @@ use scene::RubikScene;
 
 const WIDTH: u32 = 1280;
 const HEIGHT: u32 = 800;
+const DEFAULT_MAX_FRAMES: u64 = 600;
 
 fn main() {
     let driver = RubikDriver::new();
@@ -104,8 +105,9 @@ fn run_native(mut driver: RubikDriver, mut scene: RubikScene) {
     let max_frames = std::env::var("RKE_RUBIK_MAX_FRAMES")
         .ok()
         .and_then(|value| value.parse::<u64>().ok());
+    let max_frames = max_frames.unwrap_or(DEFAULT_MAX_FRAMES);
     let mut frame_count = 0_u64;
-    while running && max_frames.map(|limit| frame_count < limit).unwrap_or(true) {
+    while running && frame_count < max_frames {
         window.poll_events(&mut window_events, &mut input_events);
         for event in &window_events {
             match event {

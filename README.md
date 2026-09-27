@@ -195,6 +195,9 @@ a claim that every GPU/driver can sustain the target.
 The `quality-milestone` workflow uploads the complete milestone report as the
 `quality-milestone-criterion-report` artifact. It intentionally runs without
 Criterion's `--noplot` flag so that the HTML report and its plots are retained.
+It runs for relevant pull requests, pushes to `main`, and can also be started
+manually with the Actions `workflow_dispatch` button. It has no scheduled cron
+run.
 
 ## Native I/O safety notes
 

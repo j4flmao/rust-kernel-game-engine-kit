@@ -8,6 +8,10 @@ use rust_kernel_game_engine_kit::kernel::{
     sync::{HmacSha256Authenticator, SyncKind, SyncPacket},
     World,
 };
+use rust_kernel_game_engine_kit::subsystems::ui::{
+    UiConfig, UiDiagnostics, UiLayoutEngine, UiLength, UiNodeContent, UiNodeKind, UiPaintList,
+    UiRect, UiRenderSnapshot, UiTree,
+};
 
 fn bench_arena(c: &mut Criterion) {
     let mut group = c.benchmark_group("memory/arena");
@@ -199,6 +203,133 @@ fn bench_dependency_waves(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_ui_layout_paint(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ui/layout-paint");
+    for nodes in [32usize, 128, 512] {
+        let config = UiConfig {
+            max_nodes: nodes.saturating_add(1),
+            max_paint_items: nodes.saturating_add(1),
+            max_clips: nodes.saturating_add(2),
+            max_batches: nodes.saturating_add(1),
+            max_upload_bytes: nodes.saturating_mul(128).saturating_add(1024),
+            ..UiConfig::default()
+        };
+        group.throughput(Throughput::Elements(nodes as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(nodes), &nodes, |b, &n| {
+            b.iter_batched(
+                || {
+                    let mut tree = UiTree::try_new(config).expect("UI tree capacity");
+                    let root = tree.root();
+                    for index in 0..n {
+                        let mut panel = UiNodeContent::new(UiNodeKind::Panel);
+                        panel.style.width = UiLength::Percent(100.0);
+                        panel.style.height = UiLength::Points(24.0 + (index % 4) as f32);
+                        panel.style.background = [0.1, 0.2, 0.3, 1.0];
+                        tree.create(root, panel).expect("UI node capacity");
+                    }
+                    (
+                        tree,
+                        UiLayoutEngine::try_new(config).expect("layout capacity"),
+                        UiPaintList::try_new(config).expect("paint capacity"),
+                        UiDiagnostics::default(),
+                    )
+                },
+                |(mut tree, mut layout, mut paint, mut diagnostics)| {
+                    let viewport = UiRect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 1920.0,
+                        height: 1080.0,
+                    };
+                    layout
+                        .layout(&mut tree, viewport, &mut diagnostics)
+                        .expect("layout should stay bounded");
+                    let plan = paint
+                        .build(&tree, viewport, &mut diagnostics)
+                        .expect("paint should stay bounded");
+                    black_box((plan.item_count, plan.batch_count, plan.upload_bytes));
+                },
+                BatchSize::SmallInput,
+            );
+        });
+    }
+    group.finish();
+}
+
+fn build_ui_benchmark_snapshot(nodes: usize) -> UiRenderSnapshot {
+    let config = UiConfig {
+        max_nodes: nodes.saturating_add(1),
+        max_paint_items: nodes.saturating_add(1),
+        max_clips: nodes.saturating_add(2),
+        max_batches: nodes.saturating_add(1),
+        max_upload_bytes: nodes.saturating_mul(128).saturating_add(1024),
+        ..UiConfig::default()
+    };
+    let mut tree = UiTree::try_new(config).expect("UI tree capacity");
+    let root = tree.root();
+    for index in 0..nodes {
+        let mut panel = UiNodeContent::new(UiNodeKind::Panel);
+        panel.style.width = UiLength::Percent(100.0);
+        panel.style.height = UiLength::Points(24.0 + (index % 4) as f32);
+        panel.style.background = [0.1, 0.2, 0.3, 1.0];
+        tree.create(root, panel).expect("UI node capacity");
+    }
+    let viewport = UiRect {
+        x: 0.0,
+        y: 0.0,
+        width: 1920.0,
+        height: 1080.0,
+    };
+    let mut diagnostics = UiDiagnostics::default();
+    let mut layout = UiLayoutEngine::try_new(config).expect("layout capacity");
+    layout
+        .layout(&mut tree, viewport, &mut diagnostics)
+        .expect("layout should stay bounded");
+    let mut paint = UiPaintList::try_new(config).expect("paint capacity");
+    paint
+        .build(&tree, viewport, &mut diagnostics)
+        .expect("paint should stay bounded");
+    paint.snapshot().expect("snapshot should stay bounded")
+}
+
+fn bench_ui_snapshot_encoding(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ui/snapshot-encoding");
+    for nodes in [32usize, 128, 512] {
+        let snapshot = build_ui_benchmark_snapshot(nodes);
+        group.throughput(Throughput::Bytes(snapshot.upload.upload_bytes as u64));
+        group.bench_with_input(
+            BenchmarkId::from_parameter(nodes),
+            &snapshot,
+            |b, snapshot| {
+                b.iter(|| black_box(snapshot.encode_bytes().expect("bounded UI encoding")));
+            },
+        );
+    }
+    group.finish();
+}
+
+fn bench_ui_dirty_upload(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ui/dirty-upload");
+    for nodes in [32usize, 128, 512] {
+        let snapshot = build_ui_benchmark_snapshot(nodes);
+        group.throughput(Throughput::Bytes(snapshot.upload.upload_bytes as u64));
+        group.bench_with_input(
+            BenchmarkId::from_parameter(nodes),
+            &snapshot,
+            |b, snapshot| {
+                b.iter(|| {
+                    black_box(
+                        snapshot
+                            .encode_dirty_ranges(Some(snapshot))
+                            .expect("bounded dirty upload"),
+                    )
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
 criterion_group!(
     kernel_benches,
     bench_arena,
@@ -208,5 +339,8 @@ criterion_group!(
     bench_ecs,
     bench_sync,
     bench_dependency_waves,
+    bench_ui_layout_paint,
+    bench_ui_snapshot_encoding,
+    bench_ui_dirty_upload,
 );
 criterion_main!(kernel_benches);

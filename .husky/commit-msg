@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+
+set -eu
+npx --no -- commitlint --config commitlint.json --edit "$1"

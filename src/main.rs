@@ -17,6 +17,7 @@ use rust_kernel_game_engine_kit::subsystems::{
     physics::PhysicsSubsystem,
     renderer::RendererSubsystem,
     scripting::ScriptingSubsystem,
+    ui::UiSubsystem,
     window::{WindowId, WindowSize, WindowSubsystem},
 };
 
@@ -104,6 +105,7 @@ fn main() -> ExitCode {
         Box::new(WindowSubsystem::new(WindowId(1), size))
             as Box<dyn rust_kernel_game_engine_kit::kernel::Subsystem>,
         Box::new(InputSubsystem::default()),
+        Box::new(UiSubsystem::default()),
         Box::new(renderer),
         Box::new(PhysicsSubsystem::default()),
         Box::new(AudioSubsystem::default()),

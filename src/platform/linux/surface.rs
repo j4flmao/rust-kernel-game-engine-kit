@@ -50,8 +50,9 @@ pub unsafe fn create(
     if instance.is_null() || display.display_handle().is_null() {
         return Err(VulkanLoaderError::InvalidQueuePlan);
     }
-    let create: CreateXlibSurface = unsafe { resolve(loader, b"vkCreateXlibSurfaceKHR\0")? };
-    let destroy: DestroySurface = unsafe { resolve(loader, b"vkDestroySurfaceKHR\0")? };
+    let create: CreateXlibSurface =
+        unsafe { resolve(loader, instance, b"vkCreateXlibSurfaceKHR\0")? };
+    let destroy: DestroySurface = unsafe { resolve(loader, instance, b"vkDestroySurfaceKHR\0")? };
     let info = XlibSurfaceCreateInfo {
         s_type: 1000004000,
         next: core::ptr::null(),
@@ -83,8 +84,9 @@ pub unsafe fn create_with_handles(
     if instance.is_null() || display.is_null() {
         return Err(VulkanLoaderError::InvalidQueuePlan);
     }
-    let create: CreateXlibSurface = unsafe { resolve(loader, b"vkCreateXlibSurfaceKHR\0")? };
-    let destroy: DestroySurface = unsafe { resolve(loader, b"vkDestroySurfaceKHR\0")? };
+    let create: CreateXlibSurface =
+        unsafe { resolve(loader, instance, b"vkCreateXlibSurfaceKHR\0")? };
+    let destroy: DestroySurface = unsafe { resolve(loader, instance, b"vkDestroySurfaceKHR\0")? };
     let info = XlibSurfaceCreateInfo {
         s_type: 1000004000,
         next: core::ptr::null(),
@@ -105,8 +107,12 @@ pub unsafe fn create_with_handles(
     })
 }
 
-unsafe fn resolve<T>(loader: &VulkanLoader, name: &'static [u8]) -> Result<T, VulkanLoaderError> {
-    let pointer = unsafe { loader.global_proc(name) }.ok_or_else(|| {
+unsafe fn resolve<T>(
+    loader: &VulkanLoader,
+    instance: VkInstance,
+    name: &'static [u8],
+) -> Result<T, VulkanLoaderError> {
+    let pointer = unsafe { loader.instance_proc(instance, name) }.ok_or_else(|| {
         VulkanLoaderError::MissingCommand(String::from_utf8_lossy(name).into_owned())
     })?;
     Ok(unsafe { core::mem::transmute_copy(&pointer) })

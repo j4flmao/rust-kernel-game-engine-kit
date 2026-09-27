@@ -8,4 +8,5 @@ pub mod physics;
 pub mod renderer;
 pub mod scripting;
 pub mod tock;
+pub mod ui;
 pub mod window;

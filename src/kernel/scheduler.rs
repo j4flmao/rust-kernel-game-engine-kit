@@ -337,6 +337,17 @@ impl Kernel {
 
     /// Runs `frames` simulation frames at a fixed 1/60 step.
     pub fn run(&mut self, frames: u64) -> Result<(), KernelError> {
+        self.run_until(frames, || true)
+    }
+
+    /// Runs fixed-step frames until the frame budget or caller predicate ends.
+    ///
+    /// This keeps interactive applications in control of their native window
+    /// lifetime without making the kernel depend on a platform event loop.
+    pub fn run_until<F>(&mut self, frames: u64, mut keep_running: F) -> Result<(), KernelError>
+    where
+        F: FnMut() -> bool,
+    {
         if !self.initialized {
             return Err(KernelError::NotInitialized);
         }
@@ -347,6 +358,9 @@ impl Kernel {
         let mut limiter = FrameLimiter::at(60.0);
 
         for _ in 0..frames {
+            if !keep_running() {
+                break;
+            }
             self.bus.flush();
             // Rewind the per-frame arena before any subsystem touches it.
             self.frame_arena.reset();

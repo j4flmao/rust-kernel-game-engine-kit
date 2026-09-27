@@ -38,3 +38,17 @@ path = "fuzz_targets/ecs_mutations.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "ui_commands"
+path = "fuzz_targets/ui_commands.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ui_values"
+path = "fuzz_targets/ui_values.rs"
+test = false
+doc = false
+bench = false

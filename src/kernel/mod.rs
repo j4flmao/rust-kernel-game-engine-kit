@@ -6,6 +6,7 @@
 mod context;
 mod deferred;
 mod error;
+mod game;
 mod registry;
 mod scheduler;
 mod subsystem;
@@ -21,6 +22,7 @@ pub use self::context::KernelContext;
 pub use self::deferred::{DeferredCommand, DeferredCommandError, DeferredCommands};
 pub use self::ecs::world::{ComponentId, World};
 pub use self::error::KernelError;
+pub use self::game::{GamePlugin, GamePluginHost};
 pub use self::mem::{BumpArena, Pool, PoolError, PoolHandle};
 pub use self::scheduler::{
     access_waves, dependency_waves, FrameLimiter, Kernel, ParallelWaveExecutor, SchedulePlan,

@@ -1,5 +1,6 @@
 # Rust build artifacts
 /target
+/fuzz/target
 
 # Editor / OS
 .idea/
@@ -11,3 +12,5 @@
 # Node/Husky tooling
 /node_modules/
 /.husky/_/
+
+docs

@@ -12,7 +12,8 @@ on:
       - "Cargo.lock"
       - ".github/workflows/quality-milestone.yml"
   push:
-    branches: [main]
+    branches:
+      - "**"
   workflow_dispatch:
 
 concurrency:

@@ -10,6 +10,10 @@
 //! cargo run --example rubik_3d --release
 //! ```
 
+// The Linux/MSRV build validates the headless frame contract while the native
+// Windows path exercises the camera and picking helpers at runtime.
+#![allow(dead_code)]
+
 #[path = "rubik_3d/camera.rs"]
 mod camera;
 #[path = "rubik_3d/driver.rs"]

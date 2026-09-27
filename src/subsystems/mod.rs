@@ -6,6 +6,7 @@ pub mod input;
 pub mod messages;
 pub mod physics;
 pub mod renderer;
+pub mod renderer_3d;
 pub mod scripting;
 pub mod tock;
 pub mod ui;

@@ -85,6 +85,17 @@ type VkCreateBuffer = unsafe extern "system" fn(
     *const c_void,
     *mut VkBuffer,
 ) -> VkResult;
+type VkCreateImage = unsafe extern "system" fn(
+    VkDevice,
+    *const ImageCreateInfo,
+    *const c_void,
+    *mut VkImage,
+) -> VkResult;
+type VkDestroyImage = unsafe extern "system" fn(VkDevice, VkImage, *const c_void);
+type VkGetImageMemoryRequirements =
+    unsafe extern "system" fn(VkDevice, VkImage, *mut MemoryRequirements);
+type VkBindImageMemory =
+    unsafe extern "system" fn(VkDevice, VkImage, VkDeviceMemory, u64) -> VkResult;
 type VkCreateShaderModule = unsafe extern "system" fn(
     VkDevice,
     *const ShaderModuleCreateInfo,
@@ -240,6 +251,7 @@ pub const VK_NOT_READY: VkResult = 1;
 
 pub const VK_FORMAT_B8G8R8A8_UNORM: u32 = 44;
 pub const VK_FORMAT_R8G8B8A8_UNORM: u32 = 37;
+pub const VK_FORMAT_D32_SFLOAT: u32 = 126;
 pub const VK_FORMAT_UNDEFINED: u32 = 0;
 pub const VK_COLOR_SPACE_SRGB_NONLINEAR_KHR: u32 = 0;
 
@@ -250,6 +262,7 @@ pub const VK_PRESENT_MODE_FIFO_RELAXED_KHR: u32 = 3;
 
 pub const VK_IMAGE_USAGE_TRANSFER_DST_BIT: u32 = 0x0000_0008;
 pub const VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT: u32 = 0x0000_0010;
+pub const VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT: u32 = 0x0000_0020;
 pub const VK_BUFFER_USAGE_STORAGE_BUFFER_BIT: u32 = 0x0000_0020;
 pub const VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT: u32 = 0x0000_0100;
 pub const VK_BUFFER_USAGE_TRANSFER_SRC_BIT: u32 = 0x0000_0001;
@@ -270,8 +283,10 @@ pub const VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT: u32 = 0x0000_0002;
 pub const VK_MEMORY_PROPERTY_HOST_COHERENT_BIT: u32 = 0x0000_0004;
 pub const VK_IMAGE_LAYOUT_UNDEFINED: u32 = 0;
 pub const VK_IMAGE_LAYOUT_GENERAL: u32 = 1;
+pub const VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL: u32 = 3;
 pub const VK_IMAGE_LAYOUT_PRESENT_SRC_KHR: u32 = 1000001002;
 pub const VK_IMAGE_ASPECT_COLOR_BIT: u32 = 0x0000_0001;
+pub const VK_IMAGE_ASPECT_DEPTH_BIT: u32 = 0x0000_0002;
 pub const VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR: u32 = 0x0000_0001;
 pub const VK_SHARING_MODE_EXCLUSIVE: u32 = 0;
 
@@ -292,9 +307,11 @@ pub const VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO: u32 = 43;
 pub const VK_PIPELINE_BIND_POINT_GRAPHICS: u32 = 0;
 pub const VK_SUBPASS_CONTENTS_INLINE: u32 = 0;
 pub const VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO: u32 = 15;
+pub const VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO: u32 = 14;
 pub const VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO: u32 = 38;
 pub const VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO: u32 = 37;
 pub const VK_IMAGE_VIEW_TYPE_2D: u32 = 1;
+pub const VK_IMAGE_TYPE_2D: u32 = 1;
 pub const VK_SAMPLE_COUNT_1_BIT: u32 = 1;
 pub const VK_ATTACHMENT_LOAD_OP_CLEAR: u32 = 1;
 pub const VK_ATTACHMENT_STORE_OP_STORE: u32 = 0;
@@ -307,9 +324,11 @@ pub const VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO: u32 = 20;
 pub const VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO: u32 = 22;
 pub const VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO: u32 = 23;
 pub const VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO: u32 = 24;
+pub const VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO: u32 = 25;
 pub const VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO: u32 = 26;
 pub const VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO: u32 = 28;
 pub const VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST: u32 = 3;
+pub const VK_COMPARE_OP_LESS: u32 = 1;
 pub const VK_POLYGON_MODE_FILL: u32 = 0;
 pub const VK_BLEND_FACTOR_SRC_ALPHA: u32 = 6;
 pub const VK_BLEND_FACTOR_ONE: u32 = 1;
@@ -434,6 +453,12 @@ struct ClearValue {
     color: [f32; 4],
 }
 #[repr(C)]
+struct Extent3D {
+    width: u32,
+    height: u32,
+    depth: u32,
+}
+#[repr(C)]
 struct RenderPassBeginInfo {
     s_type: u32,
     next: *const c_void,
@@ -449,6 +474,24 @@ struct ComponentMapping {
     g: u32,
     b: u32,
     a: u32,
+}
+#[repr(C)]
+struct ImageCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    image_type: u32,
+    format: u32,
+    extent: Extent3D,
+    mip_levels: u32,
+    array_layers: u32,
+    samples: u32,
+    tiling: u32,
+    usage: u32,
+    sharing_mode: u32,
+    queue_family_index_count: u32,
+    queue_family_indices: *const u32,
+    initial_layout: u32,
 }
 #[repr(C)]
 struct ImageViewCreateInfo {
@@ -589,6 +632,32 @@ struct PipelineMultisampleStateCreateInfo {
     sample_mask: *const u32,
     alpha_to_coverage_enable: u32,
     alpha_to_one_enable: u32,
+}
+#[repr(C)]
+struct PipelineDepthStencilStateCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    depth_test_enable: u32,
+    depth_write_enable: u32,
+    depth_compare_op: u32,
+    depth_bounds_test_enable: u32,
+    stencil_test_enable: u32,
+    front: StencilOpState,
+    back: StencilOpState,
+    min_depth_bounds: f32,
+    max_depth_bounds: f32,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct StencilOpState {
+    fail_op: u32,
+    pass_op: u32,
+    depth_fail_op: u32,
+    compare_op: u32,
+    compare_mask: u32,
+    write_mask: u32,
+    reference: u32,
 }
 #[repr(C)]
 struct PipelineColorBlendAttachmentState {
@@ -869,7 +938,7 @@ pub struct ImageMemoryBarrier {
 
 // VkPhysicalDeviceProperties is 824 bytes in Vulkan 1.x. Keeping the exact
 // output buffer size avoids depending on a third-party Vulkan header crate.
-#[repr(C)]
+#[repr(C, align(8))]
 struct PhysicalDeviceProperties {
     bytes: [u8; 824],
 }
@@ -878,6 +947,7 @@ struct PhysicalDeviceProperties {
 struct QueueFamilyProperties {
     flags: u32,
     queue_count: u32,
+    timestamp_valid_bits: u32,
     min_image_transfer_granularity: [u32; 3],
 }
 
@@ -1129,6 +1199,31 @@ impl NativeImageView {
 impl Drop for NativeImageView {
     fn drop(&mut self) {
         unsafe { (self.destroy)(self.device, self.handle, core::ptr::null()) };
+    }
+}
+
+/// Owns a depth image and its device-local allocation for the native world
+/// render pass.
+pub struct NativeDepthImage {
+    handle: VkImage,
+    memory: VkDeviceMemory,
+    device: VkDevice,
+    destroy_image: VkDestroyImage,
+    free_memory: VkFreeMemory,
+}
+
+impl NativeDepthImage {
+    pub const fn raw(&self) -> VkImage {
+        self.handle
+    }
+}
+
+impl Drop for NativeDepthImage {
+    fn drop(&mut self) {
+        unsafe {
+            (self.destroy_image)(self.device, self.handle, core::ptr::null());
+            (self.free_memory)(self.device, self.memory, core::ptr::null());
+        }
     }
 }
 
@@ -1872,7 +1967,10 @@ impl LogicalDevice {
         let push = PushConstantRange {
             stage_flags: VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
             offset: 0,
-            size: 8,
+            // The UI uses the first eight bytes; the world pass uses a 4x4
+            // view-projection matrix.  A shared layout keeps the present
+            // render pass composable while preserving one descriptor ABI.
+            size: 64,
         };
         let info = PipelineLayoutCreateInfo {
             s_type: VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -1928,6 +2026,16 @@ impl LogicalDevice {
         {
             return Err(VulkanLoaderError::InvalidQueuePlan);
         }
+        if draw_commands.iter().any(|command| {
+            command.vertex_count == 0
+                || command.instance_count == 0
+                || command
+                    .first_vertex
+                    .checked_add(command.vertex_count)
+                    .is_none_or(|end| end > 36)
+        }) {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
         let begin: VkCmdBeginRenderPass =
             loader.device_command(self.handle, b"vkCmdBeginRenderPass\0")?;
         let end: VkCmdEndRenderPass =
@@ -1939,7 +2047,12 @@ impl LogicalDevice {
         let push_constants: VkCmdPushConstants =
             loader.device_command(self.handle, b"vkCmdPushConstants\0")?;
         let draw: VkCmdDraw = loader.device_command(self.handle, b"vkCmdDraw\0")?;
-        let clear = ClearValue { color: clear_color };
+        let clear = [
+            ClearValue { color: clear_color },
+            ClearValue {
+                color: [1.0, 0.0, 0.0, 0.0],
+            },
+        ];
         let info = RenderPassBeginInfo {
             s_type: VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             next: core::ptr::null(),
@@ -1949,8 +2062,8 @@ impl LogicalDevice {
                 offset: [0, 0],
                 extent,
             },
-            clear_value_count: 1,
-            clear_values: &clear,
+            clear_value_count: 2,
+            clear_values: clear.as_ptr(),
         };
         unsafe {
             begin(command_buffer, &info, VK_SUBPASS_CONTENTS_INLINE);
@@ -1973,6 +2086,111 @@ impl LogicalDevice {
                 0,
                 core::mem::size_of_val(&viewport) as u32,
                 viewport.as_ptr().cast(),
+            );
+            for command in draw_commands {
+                draw(
+                    command_buffer,
+                    command.vertex_count,
+                    command.instance_count,
+                    command.first_vertex,
+                    command.first_instance,
+                );
+            }
+            end(command_buffer);
+        }
+        Ok(())
+    }
+
+    /// Records the first real opaque 3D world pass.  The vertex shader owns
+    /// the cube mesh for the bring-up path and reads bounded instance records
+    /// from the storage buffer; later phases replace this with mesh tables and
+    /// indirect command generation without changing the frame boundary.
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn cmd_world_draw(
+        &self,
+        loader: &VulkanLoader,
+        command_buffer: VkCommandBuffer,
+        render_pass: VkRenderPass,
+        framebuffer: u64,
+        pipeline: VkPipeline,
+        pipeline_layout: VkPipelineLayout,
+        descriptor_set: VkDescriptorSet,
+        extent: Extent2D,
+        clear_color: [f32; 4],
+        view_projection: [f32; 16],
+        draw_commands: &[crate::subsystems::renderer::WorldDrawCommand],
+    ) -> Result<(), VulkanLoaderError> {
+        if command_buffer.is_null()
+            || render_pass == 0
+            || framebuffer == 0
+            || pipeline == 0
+            || pipeline_layout == 0
+            || descriptor_set == 0
+            || extent.width == 0
+            || extent.height == 0
+            || draw_commands.is_empty()
+        {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        if draw_commands.iter().any(|command| {
+            command.vertex_count == 0
+                || command.instance_count == 0
+                || command
+                    .first_vertex
+                    .checked_add(command.vertex_count)
+                    .is_none_or(|end| end > 36)
+        }) {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let begin: VkCmdBeginRenderPass =
+            loader.device_command(self.handle, b"vkCmdBeginRenderPass\0")?;
+        let end: VkCmdEndRenderPass =
+            loader.device_command(self.handle, b"vkCmdEndRenderPass\0")?;
+        let bind_pipeline: VkCmdBindPipeline =
+            loader.device_command(self.handle, b"vkCmdBindPipeline\0")?;
+        let bind_sets: VkCmdBindDescriptorSets =
+            loader.device_command(self.handle, b"vkCmdBindDescriptorSets\0")?;
+        let push_constants: VkCmdPushConstants =
+            loader.device_command(self.handle, b"vkCmdPushConstants\0")?;
+        let draw: VkCmdDraw = loader.device_command(self.handle, b"vkCmdDraw\0")?;
+        let clear = [
+            ClearValue { color: clear_color },
+            ClearValue {
+                color: [1.0, 0.0, 0.0, 0.0],
+            },
+        ];
+        let info = RenderPassBeginInfo {
+            s_type: VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            next: core::ptr::null(),
+            render_pass,
+            framebuffer,
+            render_area: Rect2D {
+                offset: [0, 0],
+                extent,
+            },
+            clear_value_count: 2,
+            clear_values: clear.as_ptr(),
+        };
+        unsafe {
+            begin(command_buffer, &info, VK_SUBPASS_CONTENTS_INLINE);
+            bind_pipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            bind_sets(
+                command_buffer,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                pipeline_layout,
+                0,
+                1,
+                &descriptor_set,
+                0,
+                core::ptr::null(),
+            );
+            push_constants(
+                command_buffer,
+                pipeline_layout,
+                VK_SHADER_STAGE_VERTEX_BIT,
+                0,
+                core::mem::size_of_val(&view_projection) as u32,
+                view_projection.as_ptr().cast(),
             );
             for command in draw_commands {
                 draw(
@@ -2037,24 +2255,181 @@ impl LogicalDevice {
         })
     }
 
+    pub unsafe fn create_depth_image(
+        &self,
+        loader: &VulkanLoader,
+        physical: VkPhysicalDevice,
+        extent: Extent2D,
+    ) -> Result<NativeDepthImage, VulkanLoaderError> {
+        if physical.is_null() || extent.width == 0 || extent.height == 0 {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let create: VkCreateImage = loader.device_command(self.handle, b"vkCreateImage\0")?;
+        let destroy_image: VkDestroyImage =
+            loader.device_command(self.handle, b"vkDestroyImage\0")?;
+        let requirements: VkGetImageMemoryRequirements =
+            loader.device_command(self.handle, b"vkGetImageMemoryRequirements\0")?;
+        let allocate: VkAllocateMemory =
+            loader.device_command(self.handle, b"vkAllocateMemory\0")?;
+        let free_memory: VkFreeMemory = loader.device_command(self.handle, b"vkFreeMemory\0")?;
+        let bind: VkBindImageMemory = loader.device_command(self.handle, b"vkBindImageMemory\0")?;
+        let info = ImageCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            image_type: VK_IMAGE_TYPE_2D,
+            format: VK_FORMAT_D32_SFLOAT,
+            extent: Extent3D {
+                width: extent.width,
+                height: extent.height,
+                depth: 1,
+            },
+            mip_levels: 1,
+            array_layers: 1,
+            samples: VK_SAMPLE_COUNT_1_BIT,
+            tiling: 0,
+            usage: VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+            sharing_mode: VK_SHARING_MODE_EXCLUSIVE,
+            queue_family_index_count: 0,
+            queue_family_indices: core::ptr::null(),
+            initial_layout: VK_IMAGE_LAYOUT_UNDEFINED,
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        let mut requirements_out = MemoryRequirements {
+            size: 0,
+            alignment: 0,
+            memory_type_bits: 0,
+        };
+        unsafe { requirements(self.handle, handle, &mut requirements_out) };
+        let get_memory_properties: VkGetPhysicalDeviceMemoryProperties =
+            loader.command(b"vkGetPhysicalDeviceMemoryProperties\0")?;
+        let mut properties = PhysicalDeviceMemoryProperties {
+            memory_type_count: 0,
+            memory_types: [MemoryType {
+                property_flags: 0,
+                heap_index: 0,
+            }; 32],
+            memory_heap_count: 0,
+            memory_heaps: [MemoryHeap {
+                size: 0,
+                flags: 0,
+                _padding: 0,
+            }; 16],
+        };
+        unsafe { get_memory_properties(physical, &mut properties) };
+        let Some(type_index) = select_memory_type(
+            &properties,
+            requirements_out.memory_type_bits,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            0,
+        ) else {
+            unsafe { destroy_image(self.handle, handle, core::ptr::null()) };
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        };
+        let allocation_info = MemoryAllocateInfo {
+            s_type: 5,
+            next: core::ptr::null(),
+            allocation_size: requirements_out.size,
+            memory_type_index: type_index,
+        };
+        let mut memory = 0;
+        let result = unsafe {
+            allocate(
+                self.handle,
+                &allocation_info,
+                core::ptr::null(),
+                &mut memory,
+            )
+        };
+        if result != VK_SUCCESS || memory == 0 {
+            unsafe { destroy_image(self.handle, handle, core::ptr::null()) };
+            return Err(VulkanLoaderError::Api(result));
+        }
+        let result = unsafe { bind(self.handle, handle, memory, 0) };
+        if result != VK_SUCCESS {
+            unsafe {
+                free_memory(self.handle, memory, core::ptr::null());
+                destroy_image(self.handle, handle, core::ptr::null());
+            }
+            return Err(VulkanLoaderError::Api(result));
+        }
+        Ok(NativeDepthImage {
+            handle,
+            memory,
+            device: self.handle,
+            destroy_image,
+            free_memory,
+        })
+    }
+
+    pub unsafe fn create_depth_image_view(
+        &self,
+        loader: &VulkanLoader,
+        image: VkImage,
+    ) -> Result<NativeImageView, VulkanLoaderError> {
+        if image == 0 {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let create: VkCreateImageView =
+            loader.device_command(self.handle, b"vkCreateImageView\0")?;
+        let destroy: VkDestroyImageView =
+            loader.device_command(self.handle, b"vkDestroyImageView\0")?;
+        let info = ImageViewCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            image,
+            view_type: VK_IMAGE_VIEW_TYPE_2D,
+            format: VK_FORMAT_D32_SFLOAT,
+            components: ComponentMapping {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+            subresource_range: ImageSubresourceRange {
+                aspect_mask: VK_IMAGE_ASPECT_DEPTH_BIT,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            },
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        Ok(NativeImageView {
+            handle,
+            device: self.handle,
+            destroy,
+        })
+    }
+
     /// # Safety
     /// `loader` must dispatch through this live device and `format` must be a
     /// supported color format for the target presentation surface.
     pub unsafe fn create_ui_render_pass(
         &self,
         loader: &VulkanLoader,
-        format: u32,
+        color_format: u32,
+        depth_format: u32,
     ) -> Result<NativeRenderPass, VulkanLoaderError> {
-        if format == VK_FORMAT_UNDEFINED {
+        if color_format == VK_FORMAT_UNDEFINED || depth_format == VK_FORMAT_UNDEFINED {
             return Err(VulkanLoaderError::InvalidQueuePlan);
         }
         let create: VkCreateRenderPass =
             loader.device_command(self.handle, b"vkCreateRenderPass\0")?;
         let destroy: VkDestroyRenderPass =
             loader.device_command(self.handle, b"vkDestroyRenderPass\0")?;
-        let attachment = AttachmentDescription {
+        let color_attachment = AttachmentDescription {
             flags: 0,
-            format,
+            format: color_format,
             samples: VK_SAMPLE_COUNT_1_BIT,
             load_op: VK_ATTACHMENT_LOAD_OP_CLEAR,
             store_op: VK_ATTACHMENT_STORE_OP_STORE,
@@ -2063,19 +2438,35 @@ impl LogicalDevice {
             initial_layout: VK_IMAGE_LAYOUT_UNDEFINED,
             final_layout: VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
         };
-        let reference = AttachmentReference {
+        let depth_attachment = AttachmentDescription {
+            flags: 0,
+            format: depth_format,
+            samples: VK_SAMPLE_COUNT_1_BIT,
+            load_op: VK_ATTACHMENT_LOAD_OP_CLEAR,
+            store_op: VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            stencil_load_op: VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            stencil_store_op: VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            initial_layout: VK_IMAGE_LAYOUT_UNDEFINED,
+            final_layout: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        };
+        let color_reference = AttachmentReference {
             attachment: 0,
             layout: VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         };
+        let depth_reference = AttachmentReference {
+            attachment: 1,
+            layout: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        };
+        let attachments = [color_attachment, depth_attachment];
         let subpass = SubpassDescription {
             flags: 0,
             pipeline_bind_point: VK_PIPELINE_BIND_POINT_GRAPHICS,
             input_attachment_count: 0,
             input_attachments: core::ptr::null(),
             color_attachment_count: 1,
-            color_attachments: &reference,
+            color_attachments: &color_reference,
             resolve_attachments: core::ptr::null(),
-            depth_stencil_attachment: core::ptr::null(),
+            depth_stencil_attachment: (&depth_reference as *const AttachmentReference).cast(),
             preserve_attachment_count: 0,
             preserve_attachments: core::ptr::null(),
         };
@@ -2083,8 +2474,8 @@ impl LogicalDevice {
             s_type: VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
             next: core::ptr::null(),
             flags: 0,
-            attachment_count: 1,
-            attachments: &attachment,
+            attachment_count: 2,
+            attachments: attachments.as_ptr(),
             subpass_count: 1,
             subpasses: &subpass,
             dependency_count: 0,
@@ -2111,22 +2502,28 @@ impl LogicalDevice {
         loader: &VulkanLoader,
         render_pass: VkRenderPass,
         image_view: VkImageView,
+        depth_view: VkImageView,
         extent: Extent2D,
     ) -> Result<NativeFramebuffer, VulkanLoaderError> {
-        if render_pass == 0 || image_view == 0 || extent.width == 0 || extent.height == 0 {
+        if render_pass == 0
+            || image_view == 0
+            || depth_view == 0
+            || extent.width == 0
+            || extent.height == 0
+        {
             return Err(VulkanLoaderError::InvalidQueuePlan);
         }
         let create: VkCreateFramebuffer =
             loader.device_command(self.handle, b"vkCreateFramebuffer\0")?;
         let destroy: VkDestroyFramebuffer =
             loader.device_command(self.handle, b"vkDestroyFramebuffer\0")?;
-        let attachments = [image_view];
+        let attachments = [image_view, depth_view];
         let info = FramebufferCreateInfo {
             s_type: VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             next: core::ptr::null(),
             flags: 0,
             render_pass,
-            attachment_count: 1,
+            attachment_count: 2,
             attachments: attachments.as_ptr(),
             width: extent.width,
             height: extent.height,
@@ -2155,6 +2552,7 @@ impl LogicalDevice {
         pipeline_layout: VkPipelineLayout,
         render_pass: VkRenderPass,
         extent: Extent2D,
+        depth_enabled: bool,
     ) -> Result<NativeGraphicsPipeline, VulkanLoaderError> {
         if vertex_shader == 0
             || fragment_shader == 0
@@ -2253,6 +2651,29 @@ impl LogicalDevice {
             alpha_to_coverage_enable: 0,
             alpha_to_one_enable: 0,
         };
+        let stencil = StencilOpState {
+            fail_op: 0,
+            pass_op: 0,
+            depth_fail_op: 0,
+            compare_op: 0,
+            compare_mask: 0,
+            write_mask: 0,
+            reference: 0,
+        };
+        let depth_stencil = PipelineDepthStencilStateCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            depth_test_enable: u32::from(depth_enabled),
+            depth_write_enable: u32::from(depth_enabled),
+            depth_compare_op: VK_COMPARE_OP_LESS,
+            depth_bounds_test_enable: 0,
+            stencil_test_enable: 0,
+            front: stencil,
+            back: stencil,
+            min_depth_bounds: 0.0,
+            max_depth_bounds: 1.0,
+        };
         let blend_attachment = PipelineColorBlendAttachmentState {
             blend_enable: 1,
             src_color_blend_factor: VK_BLEND_FACTOR_SRC_ALPHA,
@@ -2288,7 +2709,8 @@ impl LogicalDevice {
             viewport_state: &viewport_state,
             rasterization_state: &rasterization,
             multisample_state: &multisample,
-            depth_stencil_state: core::ptr::null(),
+            depth_stencil_state: (&depth_stencil as *const PipelineDepthStencilStateCreateInfo)
+                .cast(),
             color_blend_state: &blend,
             dynamic_state: core::ptr::null(),
             layout: pipeline_layout,
@@ -2965,6 +3387,7 @@ fn enumerate_queue_families(
         QueueFamilyProperties {
             flags: 0,
             queue_count: 0,
+            timestamp_valid_bits: 0,
             min_image_transfer_granularity: [0; 3]
         };
         count as usize
@@ -3014,5 +3437,12 @@ mod tests {
     fn success_constant_matches_vulkan_abi() {
         assert_eq!(VK_SUCCESS, 0);
         assert_eq!(VK_API_VERSION_1_0, 0x0040_0000);
+    }
+
+    #[test]
+    fn physical_device_output_layout_matches_vulkan() {
+        assert_eq!(core::mem::size_of::<PhysicalDeviceProperties>(), 824);
+        assert_eq!(core::mem::align_of::<PhysicalDeviceProperties>(), 8);
+        assert_eq!(core::mem::size_of::<QueueFamilyProperties>(), 24);
     }
 }

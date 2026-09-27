@@ -592,6 +592,20 @@ pub struct UiDrawCommand {
     pub first_instance: u32,
 }
 
+/// One bounded opaque-world draw for the native 3D baseline.
+///
+/// The first GPU implementation uses direct instanced draws after the CPU
+/// manifest has validated mesh/material batches.  Indirect command recording
+/// remains a separate phase so a failed GPU-driven path can fall back without
+/// changing the world-pass contract.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WorldDrawCommand {
+    pub vertex_count: u32,
+    pub instance_count: u32,
+    pub first_vertex: u32,
+    pub first_instance: u32,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UiCommandPlanError {
     InvalidBatch,

@@ -240,6 +240,9 @@ impl Subsystem for InputSubsystem {
         if let Some(game) = ctx.resolve("sudoku-game") {
             let _ = ctx.publish(game, 2, frame);
         }
+        if let Some(rubik) = ctx.resolve("rubik-driver") {
+            let _ = ctx.publish(rubik, 2, frame);
+        }
     }
     fn shutdown(&mut self, _ctx: &mut KernelContext<'_>) {}
 }

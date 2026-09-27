@@ -41,6 +41,12 @@ lto = "fat"
 name = "kernel"
 harness = false
 
+# Quality milestone reporting is separate from the kernel benchmark report.
+[[bench]]
+name = "performance_milestone"
+harness = false
+path = "benches/quality_milestones/performance_milestone.rs"
+
 [lints.rust]
 unsafe_code = "warn"
 

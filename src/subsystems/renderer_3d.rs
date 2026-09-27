@@ -171,6 +171,10 @@ impl MeshTable {
         self.slots.len() - self.free.len()
     }
 
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub const fn max_meshes(&self) -> usize {
         self.max_meshes
     }
@@ -378,6 +382,10 @@ impl MaterialTable {
         self.slots.len() - self.free.len()
     }
 
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub const fn max_materials(&self) -> usize {
         self.max_materials
     }
@@ -512,13 +520,17 @@ fn validate_mesh_input(
     bounds: [f32; 4],
 ) -> Result<(), Renderer3dError> {
     if vertex_stride < 12
-        || vertex_stride % 4 != 0
+        || !vertex_stride.is_multiple_of(4)
         || vertex_bytes.is_empty()
-        || vertex_bytes.len() % vertex_stride as usize != 0
+        || !vertex_bytes.len().is_multiple_of(vertex_stride as usize)
     {
         return Err(Renderer3dError::InvalidVertexFormat);
     }
-    if index_bytes.is_empty() || index_bytes.len() % core::mem::size_of::<u32>() != 0 {
+    if index_bytes.is_empty()
+        || !index_bytes
+            .len()
+            .is_multiple_of(core::mem::size_of::<u32>())
+    {
         return Err(Renderer3dError::InvalidIndexData);
     }
     if !bounds.iter().all(|value| value.is_finite()) || bounds[3] < 0.0 {

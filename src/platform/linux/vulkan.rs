@@ -2075,6 +2075,12 @@ impl LogicalDevice {
     /// the cube mesh for the bring-up path and reads bounded instance records
     /// from the storage buffer; later phases replace this with mesh tables and
     /// indirect command generation without changing the frame boundary.
+    ///
+    /// # Safety
+    ///
+    /// The caller must provide live, compatible Vulkan handles and a valid
+    /// loader dispatch table. The referenced device resources must remain
+    /// alive until command recording is complete.
     #[allow(clippy::too_many_arguments)]
     pub unsafe fn cmd_world_draw(
         &self,
@@ -2228,6 +2234,10 @@ impl LogicalDevice {
         })
     }
 
+    /// # Safety
+    ///
+    /// The caller must provide a live physical device compatible with this
+    /// logical device and keep the loader/device alive for the operation.
     pub unsafe fn create_depth_image(
         &self,
         loader: &VulkanLoader,
@@ -2339,6 +2349,10 @@ impl LogicalDevice {
         })
     }
 
+    /// # Safety
+    ///
+    /// The caller must provide a live image created for this device and keep
+    /// the loader/device alive while the image view is created.
     pub unsafe fn create_depth_image_view(
         &self,
         loader: &VulkanLoader,
@@ -2529,6 +2543,7 @@ impl LogicalDevice {
     /// The caller must provide live, compatible shader modules, pipeline
     /// layout, render pass, and logical device handles, and keep those parent
     /// resources alive until the returned pipeline is dropped.
+    #[allow(clippy::too_many_arguments)]
     pub unsafe fn create_ui_graphics_pipeline(
         &self,
         loader: &VulkanLoader,

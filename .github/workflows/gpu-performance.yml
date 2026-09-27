@@ -57,6 +57,21 @@ jobs:
       - name: Build Rubik GPU example
         run: cargo build --locked --release --example rubik_3d --all-features
 
+      - name: Run CPU milestone benchmark on GPU host
+        shell: pwsh
+        run: |
+          $env:CARGO_TARGET_DIR = "target/criterion-gpu-host"
+          cargo bench --locked --bench performance_milestone
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          $report = Get-ChildItem -Path target/criterion-gpu-host/criterion `
+            -Filter index.html -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if ($null -eq $report) {
+            throw 'Criterion GPU-host CPU baseline did not emit an HTML report'
+          }
+
       - name: Run bounded Rubik GPU workload
         shell: pwsh
         env:
@@ -76,6 +91,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: rubik-gpu-runtime-${{ github.run_id }}
-          path: gpu-artifacts/
+          name: gpu-quality-milestone-${{ github.run_id }}
+          path: |
+            gpu-artifacts/
+            target/criterion-gpu-host/criterion/
           if-no-files-found: warn

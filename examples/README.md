@@ -58,5 +58,8 @@ The normal CI runners use CPU/software Vulkan. The real GPU workload is kept in
 `.github/workflows/gpu-performance.yml` and is manual-only. Configure a
 GitHub-hosted larger GPU runner or a self-hosted Windows runner with a custom
 label such as `gpu-windows`, then run the workflow from the Actions tab and
-enter that exact label. The workflow records the adapter, builds the native
-Rubik example, runs the bounded frame workload, and uploads the runtime log.
+enter that exact label. The workflow records the adapter, runs the Criterion
+18M/60/120 CPU baseline on that host, builds the native Rubik example, runs the
+bounded frame workload on the GPU, and uploads both the HTML baseline report
+and runtime log. The Criterion report measures CPU preparation; the Rubik FPS
+line measures the native GPU presentation path.

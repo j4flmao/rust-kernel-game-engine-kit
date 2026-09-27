@@ -51,3 +51,12 @@ cargo run --example rubik_3d --release
 
 Set `RKE_RUBIK_MAX_FRAMES` to a larger value for a longer manual GPU run. A
 value of `0` exits immediately after initialization.
+
+### GPU workflow
+
+The normal CI runners use CPU/software Vulkan. The real GPU workload is kept in
+`.github/workflows/gpu-performance.yml` and is manual-only. Configure a
+GitHub-hosted larger GPU runner or a self-hosted Windows runner with a custom
+label such as `gpu-windows`, then run the workflow from the Actions tab and
+enter that exact label. The workflow records the adapter, builds the native
+Rubik example, runs the bounded frame workload, and uploads the runtime log.

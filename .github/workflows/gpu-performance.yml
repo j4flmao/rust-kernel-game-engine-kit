@@ -1,0 +1,81 @@
+name: GPU quality milestone
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner_label:
+        description: >-
+          Exact GPU runner label configured for this repository, for example
+          gpu-windows or the name of a GitHub larger GPU runner.
+        required: true
+        default: gpu-windows
+        type: string
+      frames:
+        description: Number of Rubik frames to execute on the GPU runner
+        required: true
+        default: "600"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gpu-performance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rubik-gpu:
+    name: Rubik GPU runtime
+    # This is intentionally dispatch-only. A repository must first configure
+    # a runner with the label supplied above; otherwise the job would remain
+    # queued and block ordinary CI.
+    runs-on: ${{ inputs.runner_label }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Inspect GPU
+        shell: pwsh
+        run: |
+          $nvidia = Get-Command nvidia-smi -ErrorAction SilentlyContinue
+          if ($null -ne $nvidia) {
+            nvidia-smi
+          } else {
+            Get-CimInstance Win32_VideoController |
+              Select-Object Name, DriverVersion, AdapterRAM |
+              Format-List
+          }
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: stable
+
+      - name: Build Rubik GPU example
+        run: cargo build --locked --release --example rubik_3d --all-features
+
+      - name: Run bounded Rubik GPU workload
+        shell: pwsh
+        env:
+          RKE_RUBIK_MAX_FRAMES: ${{ inputs.frames }}
+        run: |
+          New-Item -ItemType Directory -Force -Path gpu-artifacts | Out-Null
+          cargo run --locked --release --example rubik_3d --all-features 2>&1 |
+            Tee-Object -FilePath gpu-artifacts/rubik-gpu-run.log
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          if (-not (Select-String -Path gpu-artifacts/rubik-gpu-run.log -Pattern 'rubik_3d_gpu:')) {
+            throw 'Rubik GPU workload did not emit a frame timing report'
+          }
+
+      - name: Upload GPU runtime log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rubik-gpu-runtime-${{ github.run_id }}
+          path: gpu-artifacts/
+          if-no-files-found: warn

@@ -62,7 +62,7 @@ fn run_native(mut driver: RubikDriver, mut scene: RubikScene) {
     use rust_kernel_game_engine_kit::subsystems::input::InputEvent;
     use rust_kernel_game_engine_kit::subsystems::window::{WindowEvent, WindowSize};
     use state::{Axis, RotationCommand};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     let window = match Win32Window::create("Rust Kernel Rubik 3D", WIDTH as i32, HEIGHT as i32) {
         Ok(window) => window,
@@ -107,6 +107,8 @@ fn run_native(mut driver: RubikDriver, mut scene: RubikScene) {
         .and_then(|value| value.parse::<u64>().ok());
     let max_frames = max_frames.unwrap_or(DEFAULT_MAX_FRAMES);
     let mut frame_count = 0_u64;
+    let session_start = Instant::now();
+    let mut presented_frames = 0_u64;
     while running && frame_count < max_frames {
         window.poll_events(&mut window_events, &mut input_events);
         for event in &window_events {
@@ -315,7 +317,7 @@ fn run_native(mut driver: RubikDriver, mut scene: RubikScene) {
             break;
         }
         match present.present_frame() {
-            Ok(PresentStatus::Presented) => {}
+            Ok(PresentStatus::Presented) => presented_frames = presented_frames.saturating_add(1),
             Ok(PresentStatus::OutOfDate) => {
                 if let Some(size) = window.client_size() {
                     if let Err(error) = present.recreate(PresentSize {
@@ -340,6 +342,16 @@ fn run_native(mut driver: RubikDriver, mut scene: RubikScene) {
         std::thread::sleep(Duration::from_millis(16));
         frame_count = frame_count.saturating_add(1);
     }
+    let elapsed_seconds = session_start.elapsed().as_secs_f64();
+    let average_fps = if elapsed_seconds > 0.0 {
+        presented_frames as f64 / elapsed_seconds
+    } else {
+        0.0
+    };
+    println!(
+        "rubik_3d_gpu: frames={presented_frames} elapsed_ms={:.2} average_fps={average_fps:.2}",
+        elapsed_seconds * 1_000.0
+    );
 }
 
 #[cfg(windows)]

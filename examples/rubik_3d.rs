@@ -19,9 +19,8 @@ mod scene;
 #[path = "rubik_3d/state.rs"]
 mod state;
 
-use driver::{MoveFace, MoveRequest, RubikDriver};
+use driver::RubikDriver;
 use scene::RubikScene;
-use state::{Axis, RotationCommand};
 
 const WIDTH: u32 = 1280;
 const HEIGHT: u32 = 800;
@@ -45,20 +44,23 @@ fn main() {
     #[cfg(not(windows))]
     {
         println!(
-            "rubik_3d: native presentation is currently enabled on Windows; "
-                + "headless Linux validates the frame contract only"
+            "{}{}",
+            "rubik_3d: native presentation is currently enabled on Windows; ",
+            "headless Linux validates the frame contract only"
         );
     }
 }
 
 #[cfg(windows)]
 fn run_native(mut driver: RubikDriver, mut scene: RubikScene) {
+    use driver::{MoveFace, MoveRequest};
     use rust_kernel_game_engine_kit::platform::windows::{
         present::{PresentEngine, PresentHandles, PresentSize, PresentStatus},
         window::Win32Window,
     };
     use rust_kernel_game_engine_kit::subsystems::input::InputEvent;
     use rust_kernel_game_engine_kit::subsystems::window::{WindowEvent, WindowSize};
+    use state::{Axis, RotationCommand};
     use std::time::Duration;
 
     let window = match Win32Window::create("Rust Kernel Rubik 3D", WIDTH as i32, HEIGHT as i32) {

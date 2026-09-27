@@ -47,11 +47,7 @@ fn main() {
 
     #[cfg(not(windows))]
     {
-        println!(
-            "{}{}",
-            "rubik_3d: native presentation is currently enabled on Windows; ",
-            "headless Linux validates the frame contract only"
-        );
+        println!("rubik_3d: native presentation is currently enabled on Windows; headless Linux validates the frame contract only");
     }
 }
 

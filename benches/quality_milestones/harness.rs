@@ -57,7 +57,7 @@ impl Config {
 
     pub fn budget(self) -> Duration {
         let fps = u64::from(self.target_fps);
-        Duration::from_nanos((1_000_000_000 + fps - 1) / fps)
+        Duration::from_nanos(1_000_000_000_u64.div_ceil(fps))
     }
 }
 

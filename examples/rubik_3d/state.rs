@@ -119,9 +119,11 @@ impl CubeState {
 
     #[allow(dead_code)]
     pub fn is_solved(&self) -> bool {
-        self.facelets
-            .chunks_exact(9)
-            .all(|face| face.iter().all(|color| *color == face[0]))
+        (0..6).all(|face_index| {
+            let start = face_index * 9;
+            let face = &self.facelets[start..start + 9];
+            face.iter().all(|color| *color == face[0])
+        })
     }
 
     pub fn reset(&mut self) {
@@ -193,7 +195,7 @@ impl CubeState {
                 let normal = multiply_vec(cubie.orientation, face_normals()[local_face]);
                 let axis = normal.iter().position(|component| *component != 0);
                 let Some(axis) = axis else { continue };
-                if cubie.coordinate[axis] != normal[axis] as i8 {
+                if cubie.coordinate[axis] != normal[axis] {
                     continue;
                 }
                 let index = facelet_index(normal, cubie.coordinate);

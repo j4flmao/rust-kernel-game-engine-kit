@@ -52,17 +52,9 @@ cargo run --example rubik_3d --release
 Set `RKE_RUBIK_MAX_FRAMES` to a larger value for a longer manual GPU run. A
 value of `0` exits immediately after initialization.
 
-### GPU workflow
+### GPU validation
 
-`.github/workflows/gpu-performance.yml` runs automatically on every branch push
-using the free `windows-latest` runner. The PR label `area: gpu` is only a
-classification label; it does not select or provision a GitHub runner. The
-free lane records the adapter, runs the Criterion 18M/60/120 CPU baseline,
-builds the native Rubik example, and validates the software/native graphics
-fallback. A real GPU timing result is only asserted when the selected runner
-provides a GPU/driver-backed Vulkan path; otherwise the artifact explicitly
-reports `free-software-validation`.
-
-Manual dispatch can select a real runner label when one is available by
-changing `runner_label`; the default remains `windows-latest` so normal branch
-CI never waits for a paid larger GPU runner.
+GPU CI is intentionally disabled for now. The native Rubik example can still
+be run locally on a machine with a Vulkan driver. A dedicated GPU workflow will
+be added after a GPU server is available; it will then cover adapter discovery,
+native Vulkan presentation, GPU frame timing, and the 18M/60/120 milestones.

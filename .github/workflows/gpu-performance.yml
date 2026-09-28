@@ -7,10 +7,11 @@ on:
     inputs:
       runner_label:
         description: >-
-          Exact GPU runner label configured for this repository, for example
-          area: gpu or the name of a GitHub larger GPU runner.
+          Optional runner label. The default windows-latest runner is free and
+          uses the software Vulkan lane. Set this only when a real GPU runner
+          is available.
         required: true
-        default: "area: gpu"
+        default: "windows-latest"
         type: string
       frames:
         description: Number of Rubik frames to execute on the GPU runner
@@ -27,10 +28,10 @@ concurrency:
 
 jobs:
   rubik-gpu:
-    name: Rubik GPU runtime
-    # Every branch push uses the configured GPU runner. Manual runs can select
-    # a different runner label through workflow_dispatch.
-    runs-on: "${{ inputs.runner_label || vars.GPU_RUNNER_LABEL || 'area: gpu' }}"
+    name: Rubik graphics milestone
+    # Free by default. `area: gpu` is a PR classification label, not a runner
+    # label. A real GPU runner can be selected explicitly through dispatch.
+    runs-on: "${{ inputs.runner_label || 'windows-latest' }}"
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -38,16 +39,24 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Inspect GPU
+      - name: Inspect graphics adapter
+        id: adapter
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path gpu-artifacts | Out-Null
           $nvidia = Get-Command nvidia-smi -ErrorAction SilentlyContinue
           if ($null -ne $nvidia) {
             nvidia-smi
+            nvidia-smi | Out-File -Encoding utf8 gpu-artifacts/adapter.txt
+            "has_hardware_gpu=true" >> $env:GITHUB_OUTPUT
           } else {
             Get-CimInstance Win32_VideoController |
               Select-Object Name, DriverVersion, AdapterRAM |
               Format-List
+            Get-CimInstance Win32_VideoController |
+              Select-Object Name, DriverVersion, AdapterRAM |
+              Format-List | Out-File -Encoding utf8 gpu-artifacts/adapter.txt
+            "has_hardware_gpu=false" >> $env:GITHUB_OUTPUT
           }
 
       - name: Install Rust toolchain
@@ -58,7 +67,7 @@ jobs:
       - name: Build Rubik GPU example
         run: cargo build --locked --release --example rubik_3d --all-features
 
-      - name: Run CPU milestone benchmark on GPU host
+      - name: Run CPU milestone benchmark on graphics host
         shell: pwsh
         run: |
           $env:CARGO_TARGET_DIR = "target/criterion-gpu-host"
@@ -70,22 +79,28 @@ jobs:
             -Filter index.html -Recurse -ErrorAction SilentlyContinue |
             Select-Object -First 1
           if ($null -eq $report) {
-            throw 'Criterion GPU-host CPU baseline did not emit an HTML report'
+            throw 'Criterion graphics-host CPU baseline did not emit an HTML report'
           }
 
-      - name: Run bounded Rubik GPU workload
+      - name: Run bounded Rubik graphics workload
         shell: pwsh
         env:
           RKE_RUBIK_MAX_FRAMES: ${{ inputs.frames || '600' }}
         run: |
-          New-Item -ItemType Directory -Force -Path gpu-artifacts | Out-Null
           cargo run --locked --release --example rubik_3d --all-features 2>&1 |
             Tee-Object -FilePath gpu-artifacts/rubik-gpu-run.log
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
-          if (-not (Select-String -Path gpu-artifacts/rubik-gpu-run.log -Pattern 'rubik_3d_gpu:')) {
-            throw 'Rubik GPU workload did not emit a frame timing report'
+          if (Select-String -Path gpu-artifacts/rubik-gpu-run.log -Pattern 'rubik_3d_gpu:') {
+            'execution_mode=hardware-or-driver-backed' | Out-File -Encoding utf8 gpu-artifacts/execution-mode.txt
+          } elseif ('${{ steps.adapter.outputs.has_hardware_gpu }}' -eq 'false' -and
+              (Select-String -Path gpu-artifacts/rubik-gpu-run.log -Pattern 'rubik_3d:')) {
+            'execution_mode=free-software-validation' | Out-File -Encoding utf8 gpu-artifacts/execution-mode.txt
+            'The free GitHub-hosted runner has no dedicated GPU; native GPU timing was not asserted.' |
+              Out-File -Encoding utf8 gpu-artifacts/execution-mode.txt -Append
+          } else {
+            throw 'Rubik workload did not emit either a GPU timing report or a valid software fallback report'
           }
 
       - name: Upload GPU runtime log

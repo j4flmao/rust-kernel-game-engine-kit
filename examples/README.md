@@ -54,13 +54,15 @@ value of `0` exits immediately after initialization.
 
 ### GPU workflow
 
-The normal CI runners use CPU/software Vulkan. The real GPU workload is kept in
-`.github/workflows/gpu-performance.yml` and runs automatically on every branch
-push. Configure a GitHub-hosted larger GPU runner or a self-hosted Windows
-runner with the `area: gpu` label; alternatively set the repository variable
-`GPU_RUNNER_LABEL` to the exact runner label. Manual dispatch can override the
-label and frame count. The workflow records the adapter, runs the Criterion
-18M/60/120 CPU baseline on that host, builds the native Rubik example, runs the
-bounded frame workload on the GPU, and uploads both the HTML baseline report
-and runtime log. The Criterion report measures CPU preparation; the Rubik FPS
-line measures the native GPU presentation path.
+`.github/workflows/gpu-performance.yml` runs automatically on every branch push
+using the free `windows-latest` runner. The PR label `area: gpu` is only a
+classification label; it does not select or provision a GitHub runner. The
+free lane records the adapter, runs the Criterion 18M/60/120 CPU baseline,
+builds the native Rubik example, and validates the software/native graphics
+fallback. A real GPU timing result is only asserted when the selected runner
+provides a GPU/driver-backed Vulkan path; otherwise the artifact explicitly
+reports `free-software-validation`.
+
+Manual dispatch can select a real runner label when one is available by
+changing `runner_label`; the default remains `windows-latest` so normal branch
+CI never waits for a paid larger GPU runner.

@@ -994,7 +994,13 @@ mod tests {
             key: 9,
             payload: vec![7, 8],
         };
-        let nonce = [3u8; 16];
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let nonce = std::array::from_fn(|index| {
+            seed.rotate_left((index as u32) & 63) as u8 ^ (index as u8).wrapping_mul(29)
+        });
         let bytes = Replicator::encode_authenticated_packet(&packet, nonce, &auth).unwrap();
         let mut receiver = Replicator::default();
         assert_eq!(

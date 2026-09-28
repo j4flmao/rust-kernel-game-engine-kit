@@ -3,6 +3,8 @@
 
 #[link(name = "user32")]
 unsafe extern "system" {}
+#[link(name = "gdi32")]
+unsafe extern "system" {}
 
 use std::ffi::CString;
 
@@ -15,14 +17,19 @@ const INVALID_DIMENSION: u32 = 87;
 const CS_HREDRAW: u32 = 0x0002;
 const CS_VREDRAW: u32 = 0x0001;
 const WS_OVERLAPPEDWINDOW: u32 = 0x00CF0000;
-const CW_USEDEFAULT: i32 = -0x8000_0000i32;
 const SW_SHOW: i32 = 5;
 const PM_REMOVE: u32 = 0x0001;
 const WM_KEYDOWN: u32 = 0x0100;
 const WM_KEYUP: u32 = 0x0101;
+const WM_NCCREATE: u32 = 0x0081;
 const WM_MOUSEMOVE: u32 = 0x0200;
+const WM_LBUTTONDOWN: u32 = 0x0201;
+const WM_LBUTTONUP: u32 = 0x0202;
+const WM_RBUTTONDOWN: u32 = 0x0204;
+const WM_RBUTTONUP: u32 = 0x0205;
 const WM_SIZE: u32 = 0x0005;
 const WM_CLOSE: u32 = 0x0010;
+const IDC_ARROW: *const u8 = 32512usize as *const u8;
 
 #[repr(C)]
 struct Point {
@@ -54,6 +61,7 @@ struct WindowClass {
 
 extern "system" {
     fn GetModuleHandleA(name: *const u8) -> Handle;
+    fn LoadCursorA(instance: Handle, name: *const u8) -> Handle;
     fn RegisterClassA(class: *const WindowClass) -> u16;
     fn CreateWindowExA(
         ex_style: u32,
@@ -75,6 +83,16 @@ extern "system" {
     fn TranslateMessage(message: *const Message) -> i32;
     fn DispatchMessageA(message: *const Message) -> isize;
     fn GetLastError() -> u32;
+    fn GetDC(window: Handle) -> Handle;
+    fn ReleaseDC(window: Handle, dc: Handle) -> i32;
+    fn GetClientRect(window: Handle, rect: *mut Rect) -> i32;
+    fn CreateSolidBrush(color: u32) -> Handle;
+    fn DeleteObject(object: Handle) -> i32;
+    fn FillRect(dc: Handle, rect: *const Rect, brush: Handle) -> i32;
+    fn SetBkMode(dc: Handle, mode: i32) -> i32;
+    fn SetTextColor(dc: Handle, color: u32) -> u32;
+    fn TextOutA(dc: Handle, x: i32, y: i32, text: *const u8, length: i32) -> i32;
+    fn DefWindowProcA(window: Handle, message: u32, w_param: usize, l_param: isize) -> isize;
 }
 
 unsafe extern "system" fn window_proc(
@@ -83,8 +101,16 @@ unsafe extern "system" fn window_proc(
     w_param: usize,
     l_param: isize,
 ) -> isize {
-    let _ = (window, message, w_param, l_param);
-    0
+    // Win32 requires a non-zero result for WM_NCCREATE or
+    // CreateWindowExA aborts the window construction.
+    if message == WM_NCCREATE {
+        1
+    } else {
+        // Preserve default hit-testing, cursor selection, activation and
+        // non-client behavior. Returning zero for every message makes the
+        // window look hung and can leave the pointer in the wait state.
+        unsafe { DefWindowProcA(window, message, w_param, l_param) }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,6 +128,14 @@ impl core::error::Error for WindowError {}
 pub struct Win32Window {
     handle: Handle,
     instance: Handle,
+}
+
+#[repr(C)]
+struct Rect {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
 }
 
 impl Win32Window {
@@ -135,7 +169,7 @@ impl Win32Window {
             window_extra: 0,
             instance,
             icon: core::ptr::null_mut(),
-            cursor: core::ptr::null_mut(),
+            cursor: unsafe { LoadCursorA(core::ptr::null_mut(), IDC_ARROW) },
             background: core::ptr::null_mut(),
             menu_name: core::ptr::null(),
             class_name: class_name.as_ptr().cast(),
@@ -155,8 +189,8 @@ impl Win32Window {
                 class_name.as_ptr().cast(),
                 title.as_ptr().cast(),
                 WS_OVERLAPPEDWINDOW,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
+                100,
+                100,
                 width,
                 height,
                 core::ptr::null_mut(),
@@ -182,6 +216,154 @@ impl Win32Window {
     pub fn show(&self) {
         // SAFETY: handle is live and owned by self.
         let _ = unsafe { ShowWindow(self.handle, SW_SHOW) };
+    }
+
+    /// Returns the drawable client area, excluding the title bar and borders.
+    ///
+    /// Vulkan swapchains are sized to this rectangle, not to the outer window
+    /// dimensions passed to `CreateWindowExA`.  Reading it after `ShowWindow`
+    /// also handles maximize/DPI adjustments made by the desktop compositor.
+    pub fn client_size(&self) -> Option<WindowSize> {
+        let mut rect = Rect {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        // SAFETY: the window owns a live HWND and rect points to writable
+        // storage for the duration of the call.
+        if unsafe { GetClientRect(self.handle, &mut rect) } == 0 {
+            return None;
+        }
+        WindowSize::new(
+            rect.right.saturating_sub(rect.left) as u32,
+            rect.bottom.saturating_sub(rect.top) as u32,
+        )
+    }
+
+    /// Paints a compact keyboard/mouse legend on top of the Rubik demo.
+    ///
+    /// The example uses the engine's native world pass for the cube.  This
+    /// small Win32 overlay keeps the controls discoverable without creating a
+    /// second app-specific renderer or introducing a UI dependency.
+    pub fn paint_rubik_help(&self, width: i32, height: i32) {
+        let dc = unsafe { GetDC(self.handle) };
+        if dc.is_null() || width < 32 || height < 32 {
+            return;
+        }
+        let panel_width = 330;
+        let panel_height = 230;
+        let right = width - 8;
+        let left = (right - panel_width).max(16).min(right - 1);
+        let top = 20;
+        unsafe {
+            SetBkMode(dc, 1);
+            let panel = CreateSolidBrush(0x00121724);
+            let rect = Rect {
+                left,
+                top,
+                right: (left + panel_width).min(right),
+                bottom: (top + panel_height).min(height - 8),
+            };
+            FillRect(dc, &rect, panel);
+            DeleteObject(panel);
+
+            SetTextColor(dc, 0x00ffffff);
+            draw_text(dc, left + 18, top + 16, "RUBIK 3D CONTROLS");
+            SetTextColor(dc, 0x00c9d4e8);
+            let lines = [
+                "Left drag: turn the selected layer",
+                "Right drag: orbit the whole cube",
+                "U D L R F B: face turns",
+                "M E S: slice turns",
+                "H: shuffle    Z/Y: undo/redo",
+                "T: solve history    N: reset",
+                "0: reset camera    Esc: quit",
+            ];
+            for (index, line) in lines.iter().enumerate() {
+                draw_text(dc, left + 18, top + 44 + index as i32 * 23, line);
+            }
+            let _ = ReleaseDC(self.handle, dc);
+        }
+    }
+
+    /// Paints the example UI through the Win32 fallback backend. This keeps
+    /// the example visibly interactive even when a machine has no usable
+    /// Vulkan device/driver.
+    pub fn paint_sudoku(&self, board: bool) {
+        let dc = unsafe { GetDC(self.handle) };
+        if dc.is_null() {
+            return;
+        }
+        unsafe {
+            SetBkMode(dc, 1);
+            let background = CreateSolidBrush(0x00f8f9fc);
+            let full = Rect {
+                left: 0,
+                top: 0,
+                right: 900,
+                bottom: 840,
+            };
+            FillRect(dc, &full, background);
+            DeleteObject(background);
+            SetTextColor(dc, 0x00232d42);
+            draw_text(dc, 48, 36, "Sudoku");
+            SetTextColor(dc, 0x00677b9d);
+            draw_text(
+                dc,
+                48,
+                70,
+                if board {
+                    "Choose a cell and enter a digit"
+                } else {
+                    "Choose your difficulty"
+                },
+            );
+            if board {
+                draw_board(dc);
+            } else {
+                draw_button(dc, 72, 160, 312, 300, 0x00f5f8ff, "EASY");
+                draw_button(dc, 330, 160, 570, 300, 0x00f5f8ff, "MEDIUM");
+                draw_button(dc, 588, 160, 828, 300, 0x00f5f8ff, "HARD");
+            }
+            let _ = ReleaseDC(self.handle, dc);
+        }
+    }
+
+    /// Paints the C++ reference application's landing screen.
+    pub fn paint_main_menu(&self) {
+        let dc = unsafe { GetDC(self.handle) };
+        if dc.is_null() {
+            return;
+        }
+        unsafe {
+            SetBkMode(dc, 1);
+            let background = CreateSolidBrush(0x00f8f9fc);
+            let full = Rect {
+                left: 0,
+                top: 0,
+                right: 900,
+                bottom: 840,
+            };
+            FillRect(dc, &full, background);
+            DeleteObject(background);
+            SetTextColor(dc, 0x00232d42);
+            draw_text(dc, 390, 175, "SUDOKU");
+            SetTextColor(dc, 0x00677b9d);
+            draw_text(dc, 380, 220, "Classic logic puzzle");
+            draw_button(dc, 310, 280, 590, 336, 0x003f83f1, "Continue");
+            draw_button(dc, 310, 350, 590, 406, 0x00f5f8ff, "New Game");
+            draw_button(dc, 310, 420, 590, 476, 0x00f5f8ff, "Leaderboard");
+            draw_button(dc, 310, 490, 590, 546, 0x00ef4145, "Quit");
+            SetTextColor(dc, 0x00677b9d);
+            draw_text(
+                dc,
+                265,
+                805,
+                "Arrow keys / mouse to select   |   1-9 to enter   |   ESC to pause",
+            );
+            let _ = ReleaseDC(self.handle, dc);
+        }
     }
     pub fn poll_messages(&self, out: &mut Vec<u32>) {
         out.clear();
@@ -224,14 +406,30 @@ impl Win32Window {
                     key: message.w_param as u32,
                     pressed: message.message == WM_KEYDOWN,
                 }),
-                WM_MOUSEMOVE => input_events.push(InputEvent::MouseMoved {
-                    x: (message.l_param as u32 & 0xffff) as i16 as i32,
-                    y: ((message.l_param as u32 >> 16) & 0xffff) as i16 as i32,
-                }),
-                WM_SIZE => window_events.push(WindowEvent::Resized(WindowSize {
-                    width: (message.l_param as u32 & 0xffff).max(1),
-                    height: ((message.l_param as u32 >> 16) & 0xffff).max(1),
-                })),
+                WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONUP | WM_RBUTTONDOWN | WM_RBUTTONUP => {
+                    let x = (message.l_param as u32 & 0xffff) as i16 as i32;
+                    let y = ((message.l_param as u32 >> 16) & 0xffff) as i16 as i32;
+                    input_events.push(InputEvent::MouseMoved { x, y });
+                    if message.message != WM_MOUSEMOVE {
+                        input_events.push(InputEvent::MouseButton {
+                            button: if matches!(message.message, WM_LBUTTONDOWN | WM_LBUTTONUP) {
+                                0
+                            } else {
+                                1
+                            },
+                            pressed: matches!(message.message, WM_LBUTTONDOWN | WM_RBUTTONDOWN),
+                        });
+                    }
+                }
+                WM_SIZE => {
+                    let width = message.l_param as u32 & 0xffff;
+                    let height = (message.l_param as u32 >> 16) & 0xffff;
+                    // Minimize sends a zero-sized client area.  Do not
+                    // recreate a 1x1 swapchain; wait for the restore event.
+                    if let Some(size) = WindowSize::new(width, height) {
+                        window_events.push(WindowEvent::Resized(size));
+                    }
+                }
                 WM_CLOSE => window_events.push(WindowEvent::CloseRequested),
                 _ => {}
             }
@@ -242,6 +440,103 @@ impl Win32Window {
             }
         }
     }
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn draw_text(dc: Handle, x: i32, y: i32, text: &str) {
+    let bytes = text.as_bytes();
+    let _ = TextOutA(dc, x, y, bytes.as_ptr(), bytes.len() as i32);
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn draw_button(
+    dc: Handle,
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+    color: u32,
+    label: &str,
+) {
+    let brush = CreateSolidBrush(color);
+    let rect = Rect {
+        left,
+        top,
+        right,
+        bottom,
+    };
+    FillRect(dc, &rect, brush);
+    DeleteObject(brush);
+    SetTextColor(dc, 0x00232d42);
+    draw_text(dc, left + 24, top + 24, label);
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn draw_board(dc: Handle) {
+    let origin_x = 72;
+    let origin_y = 140;
+    let cell = 72;
+    let brush = CreateSolidBrush(0x00e7edf6);
+    for row in 0..9 {
+        for column in 0..9 {
+            let rect = Rect {
+                left: origin_x + column * cell,
+                top: origin_y + row * cell,
+                right: origin_x + (column + 1) * cell - 2,
+                bottom: origin_y + (row + 1) * cell - 2,
+            };
+            FillRect(dc, &rect, brush);
+        }
+    }
+    DeleteObject(brush);
+    SetTextColor(dc, 0x00232d42);
+    // A stable visual seed keeps the fallback renderer useful while the
+    // gameplay state continues to live in the kernel/UI path.
+    let givens = [
+        [0, 0, 0, 0, 5, 0, 0, 0, 0],
+        [7, 0, 0, 0, 0, 0, 9, 0, 4],
+        [9, 0, 0, 3, 0, 6, 0, 5, 0],
+        [0, 0, 0, 0, 3, 0, 1, 0, 7],
+        [0, 1, 7, 9, 6, 4, 0, 0, 0],
+        [0, 0, 9, 0, 0, 0, 4, 0, 8],
+        [4, 5, 0, 0, 9, 1, 8, 0, 0],
+        [3, 0, 0, 0, 0, 5, 0, 0, 2],
+        [0, 7, 8, 6, 4, 3, 0, 0, 0],
+    ];
+    for (row, values) in givens.iter().enumerate() {
+        for (column, value) in values.iter().enumerate() {
+            if *value != 0 {
+                draw_text(
+                    dc,
+                    origin_x + column as i32 * cell + 28,
+                    origin_y + row as i32 * cell + 22,
+                    &value.to_string(),
+                );
+            }
+        }
+    }
+    for row in 0..3 {
+        for column in 0..3 {
+            let left = 655 + column * 65;
+            let top = 390 + row * 65;
+            draw_button(
+                dc,
+                left,
+                top,
+                left + 55,
+                top + 55,
+                0x003f83f1,
+                &((row * 3 + column + 1).to_string()),
+            );
+        }
+    }
+    SetTextColor(dc, 0x00677b9d);
+    draw_text(
+        dc,
+        72,
+        820,
+        "Mouse: select   1-9: fill   N: notes   H: hint   P: pause   Esc: close",
+    );
 }
 
 impl Drop for Win32Window {

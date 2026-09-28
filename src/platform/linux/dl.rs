@@ -148,6 +148,7 @@ fn last_error() -> Option<String> {
 /// verifies the sizes — fn pointers are exactly pointer-sized):
 ///
 /// ```
+/// # use rust_kernel_game_engine_kit::platform::linux::dl::{DlError, DynamicLibrary};
 /// # fn demo(lib: &DynamicLibrary) -> Result<(), DlError> {
 /// let sym = lib.symbol::<unsafe extern "C" fn(*const i8) -> usize>("strlen")?;
 /// let strlen: unsafe extern "C" fn(*const i8) -> usize = unsafe { sym.as_fn() };

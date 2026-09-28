@@ -1,0 +1,133 @@
+name: quality milestone
+
+on:
+  pull_request:
+    paths:
+      - "examples/**"
+      - "benches/**"
+      - "src/platform/**"
+      - "src/subsystems/**"
+      - "shaders/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/quality-milestone.yml"
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+concurrency:
+  group: quality-milestone-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  engine-contract:
+    name: engine and Rubik contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c
+      - run: cargo fmt --all -- --check
+      - run: cargo check --locked --all-targets --all-features
+      - run: cargo test --locked --lib --tests --all-features -- --test-threads=1
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - run: cargo test --locked --release --example rubik_3d --all-features
+      - run: cargo test --locked --release --test performance_milestone --all-features
+
+  criterion-report:
+    name: Criterion milestone report
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c
+      - name: Run milestone benchmark and build HTML report
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_TARGET_DIR=target/criterion-milestone
+          cargo bench --locked --bench performance_milestone
+          test -n "$(find target/criterion-milestone/criterion -name index.html -print -quit)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: quality-milestone-criterion-report
+          path: target/criterion-milestone/criterion/
+          if-no-files-found: error
+
+  shader-contract:
+    name: Vulkan shader and software-render contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install software Vulkan and shader compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes glslc mesa-vulkan-drivers vulkan-tools
+      - name: Compile every native shader ABI
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p shader-artifacts
+          for shader in shaders/*.vert shaders/*.frag; do
+            output="shader-artifacts/$(basename "$shader").spv"
+            glslc --target-env=vulkan1.1 "$shader" -o "$output"
+          done
+      - name: Enumerate software Vulkan device
+        run: vulkaninfo --summary
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: quality-milestone-shaders
+          path: shader-artifacts/
+          if-no-files-found: error
+
+  windows-native-contract:
+    name: Windows native Rubik build
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c
+      - run: cargo check --locked --example rubik_3d --all-features
+      - run: cargo build --locked --release --example rubik_3d --all-features
+
+  repeated-stability:
+    name: repeated allocation and state stability
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c
+      - name: Repeat state and renderer contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for cycle in $(seq 1 5); do
+            echo "quality cycle ${cycle}/5"
+            cargo test --locked --release --example rubik_3d --all-features -- --test-threads=1
+            cargo test --locked --release --test performance_milestone --all-features -- --test-threads=1
+          done

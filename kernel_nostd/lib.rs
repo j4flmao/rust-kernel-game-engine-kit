@@ -8,6 +8,8 @@ use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 const HEAP_SIZE: usize = 64 * 1024;
+const HEAP_ALIGNMENT: usize = 4096;
+#[repr(align(4096))]
 struct Heap(UnsafeCell<[u8; HEAP_SIZE]>);
 unsafe impl Sync for Heap {}
 struct BumpAllocator { heap: Heap, cursor: AtomicUsize }
@@ -15,6 +17,9 @@ unsafe impl GlobalAlloc for BumpAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let align = layout.align().max(1);
         let size = layout.size();
+        if size == 0 || align > HEAP_ALIGNMENT {
+            return core::ptr::null_mut();
+        }
         let result = self.cursor.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cursor| {
             let start = cursor.checked_add(align.saturating_sub(1))? & !(align - 1);
             start.checked_add(size).filter(|end| *end <= HEAP_SIZE)
@@ -29,12 +34,17 @@ unsafe impl GlobalAlloc for BumpAllocator {
 static ALLOCATOR: BumpAllocator = BumpAllocator { heap: Heap(UnsafeCell::new([0; HEAP_SIZE])), cursor: AtomicUsize::new(0) };
 
 pub fn try_alloc(size: usize, align: usize) -> Option<NonNull<u8>> {
+    if size == 0 || align > HEAP_ALIGNMENT {
+        return None;
+    }
     let layout = Layout::from_size_align(size, align).ok()?;
     let ptr = unsafe { ALLOCATOR.alloc(layout) };
     NonNull::new(ptr)
 }
 
 pub fn heap_remaining() -> usize { HEAP_SIZE.saturating_sub(ALLOCATOR.cursor.load(Ordering::Acquire)) }
+
+pub fn heap_used() -> usize { ALLOCATOR.cursor.load(Ordering::Acquire).min(HEAP_SIZE) }
 
 #[panic_handler]
 fn panic(_info: &PanicInfo<'_>) -> ! { loop { core::hint::spin_loop(); } }

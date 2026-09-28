@@ -53,8 +53,9 @@ pub unsafe fn create(
     if instance.is_null() || hinstance.is_null() || hwnd.is_null() {
         return Err(VulkanLoaderError::InvalidSurfaceHandle);
     }
-    let create: CreateWin32Surface = unsafe { resolve(loader, b"vkCreateWin32SurfaceKHR\0") }?;
-    let destroy: DestroySurface = unsafe { resolve(loader, b"vkDestroySurfaceKHR\0") }?;
+    let create: CreateWin32Surface =
+        unsafe { resolve(loader, instance, b"vkCreateWin32SurfaceKHR\0") }?;
+    let destroy: DestroySurface = unsafe { resolve(loader, instance, b"vkDestroySurfaceKHR\0") }?;
     let info = Win32SurfaceCreateInfo {
         s_type: 1000009000,
         next: core::ptr::null(),
@@ -87,8 +88,9 @@ pub unsafe fn create_with_handles(
     if instance.is_null() || display.is_null() || window.is_null() {
         return Err(VulkanLoaderError::InvalidSurfaceHandle);
     }
-    let create: CreateWin32Surface = unsafe { resolve(loader, b"vkCreateWin32SurfaceKHR\0") }?;
-    let destroy: DestroySurface = unsafe { resolve(loader, b"vkDestroySurfaceKHR\0") }?;
+    let create: CreateWin32Surface =
+        unsafe { resolve(loader, instance, b"vkCreateWin32SurfaceKHR\0") }?;
+    let destroy: DestroySurface = unsafe { resolve(loader, instance, b"vkDestroySurfaceKHR\0") }?;
     let info = Win32SurfaceCreateInfo {
         s_type: 1000009000,
         next: core::ptr::null(),
@@ -109,9 +111,13 @@ pub unsafe fn create_with_handles(
     })
 }
 
-unsafe fn resolve<T>(loader: &VulkanLoader, name: &'static [u8]) -> Result<T, VulkanLoaderError> {
+unsafe fn resolve<T>(
+    loader: &VulkanLoader,
+    instance: VkInstance,
+    name: &'static [u8],
+) -> Result<T, VulkanLoaderError> {
     // SAFETY: the static name is NUL terminated and T is selected to match the Vulkan ABI.
-    let pointer = unsafe { loader.global_proc(name) }.ok_or_else(|| {
+    let pointer = unsafe { loader.instance_proc(instance, name) }.ok_or_else(|| {
         VulkanLoaderError::MissingEntry(super::dl::DlError::Symbol {
             symbol: String::from_utf8_lossy(name).into_owned(),
             code: 0,

@@ -20,6 +20,8 @@ pub use super::swapchain::{
 
 const UINT64_MAX: u64 = u64::MAX;
 const OPAQUE_COMPOSITE_ALPHA: u32 = 0x0000_0001;
+const UI_UPLOAD_CAPACITY: u64 = 16 * 1024 * 1024;
+const WORLD_UPLOAD_CAPACITY: u64 = 4 * 1024 * 1024;
 
 /// Native window handles the engine presents to.
 ///
@@ -85,6 +87,9 @@ pub enum PresentStatus {
 }
 
 pub struct PresentEngine {
+    ui_pipeline: Option<UiNativePipeline>,
+    world_pipeline: Option<WorldNativePipeline>,
+    ui_targets: Option<UiFrameTargets>,
     swapchain: Swapchain,
     surface: Win32Surface,
     queue: VkQueue,
@@ -95,9 +100,227 @@ pub struct PresentEngine {
     extent: Extent2D,
     format: SurfaceFormat,
     present_mode: u32,
-    loader: VulkanLoader,
+    ui_staging: NativeBuffer,
+    ui_device: NativeBuffer,
+    world_staging: NativeBuffer,
+    world_device: NativeBuffer,
+    ui_upload: Vec<u8>,
+    ui_draw_commands: Vec<crate::subsystems::renderer::UiDrawCommand>,
+    world_upload: Vec<u8>,
+    world_view_projection: [f32; 16],
+    world_draw_commands: Vec<crate::subsystems::renderer::WorldDrawCommand>,
     _device: LogicalDevice,
     _instance: NativeInstance,
+    // Keep the loader alive until every Vulkan child has been dropped; the
+    // child destructors call function pointers resolved from this library.
+    loader: VulkanLoader,
+}
+
+#[allow(dead_code)]
+struct UiFrameTargets {
+    framebuffers: Vec<NativeFramebuffer>,
+    depth_view: NativeImageView,
+    depth_image: NativeDepthImage,
+    image_views: Vec<NativeImageView>,
+    render_pass: NativeRenderPass,
+}
+
+impl UiFrameTargets {
+    const fn render_pass(&self) -> VkRenderPass {
+        self.render_pass.raw()
+    }
+
+    fn framebuffer(&self, index: usize) -> Option<VkFramebuffer> {
+        self.framebuffers.get(index).map(NativeFramebuffer::raw)
+    }
+}
+
+struct UiNativePipeline {
+    pipeline: NativeGraphicsPipeline,
+    pipeline_layout: NativePipelineLayout,
+    descriptor_set: VkDescriptorSet,
+    _descriptor_pool: NativeDescriptorPool,
+    _descriptor_layout: NativeDescriptorSetLayout,
+    _fragment_shader: NativeShaderModule,
+    _vertex_shader: NativeShaderModule,
+}
+
+struct WorldNativePipeline {
+    pipeline: NativeGraphicsPipeline,
+    pipeline_layout: NativePipelineLayout,
+    descriptor_set: VkDescriptorSet,
+    _descriptor_pool: NativeDescriptorPool,
+    _descriptor_layout: NativeDescriptorSetLayout,
+    _fragment_shader: NativeShaderModule,
+    _vertex_shader: NativeShaderModule,
+}
+
+impl WorldNativePipeline {
+    unsafe fn build(
+        loader: &VulkanLoader,
+        device: &LogicalDevice,
+        targets: &UiFrameTargets,
+        world_buffer: VkBuffer,
+        extent: Extent2D,
+    ) -> Result<Option<Self>, PresentError> {
+        let vertex_words = crate::platform::ui_shaders::WORLD_VERTEX_SPIRV;
+        let fragment_words = crate::platform::ui_shaders::WORLD_FRAGMENT_SPIRV;
+        if vertex_words.is_empty() || fragment_words.is_empty() {
+            return Ok(None);
+        }
+        let vertex_shader = unsafe { device.create_shader_module(loader, vertex_words) }
+            .map_err(PresentError::Vulkan)?;
+        let fragment_shader = unsafe { device.create_shader_module(loader, fragment_words) }
+            .map_err(PresentError::Vulkan)?;
+        let descriptor_layout = unsafe { device.create_ui_descriptor_set_layout(loader) }
+            .map_err(PresentError::Vulkan)?;
+        let descriptor_pool =
+            unsafe { device.create_ui_descriptor_pool(loader) }.map_err(PresentError::Vulkan)?;
+        let descriptor_set = unsafe {
+            descriptor_pool.allocate_ui_set(
+                loader,
+                descriptor_layout.raw(),
+                world_buffer,
+                WORLD_UPLOAD_CAPACITY,
+            )
+        }
+        .map_err(PresentError::Vulkan)?;
+        let pipeline_layout =
+            unsafe { device.create_ui_pipeline_layout(loader, descriptor_layout.raw()) }
+                .map_err(PresentError::Vulkan)?;
+        let pipeline = unsafe {
+            device.create_ui_graphics_pipeline(
+                loader,
+                vertex_shader.raw(),
+                fragment_shader.raw(),
+                pipeline_layout.raw(),
+                targets.render_pass(),
+                extent,
+                true,
+            )
+        }
+        .map_err(PresentError::Vulkan)?;
+        Ok(Some(Self {
+            pipeline,
+            pipeline_layout,
+            descriptor_set,
+            _descriptor_pool: descriptor_pool,
+            _descriptor_layout: descriptor_layout,
+            _fragment_shader: fragment_shader,
+            _vertex_shader: vertex_shader,
+        }))
+    }
+}
+
+impl UiNativePipeline {
+    unsafe fn build(
+        loader: &VulkanLoader,
+        device: &LogicalDevice,
+        targets: &UiFrameTargets,
+        ui_buffer: VkBuffer,
+        extent: Extent2D,
+    ) -> Result<Option<Self>, PresentError> {
+        let vertex_words = crate::platform::ui_shaders::UI_VERTEX_SPIRV;
+        let fragment_words = crate::platform::ui_shaders::UI_FRAGMENT_SPIRV;
+        if vertex_words.is_empty() || fragment_words.is_empty() {
+            return Ok(None);
+        }
+        let vertex_shader = unsafe { device.create_shader_module(loader, vertex_words) }
+            .map_err(PresentError::Vulkan)?;
+        let fragment_shader = unsafe { device.create_shader_module(loader, fragment_words) }
+            .map_err(PresentError::Vulkan)?;
+        let descriptor_layout = unsafe { device.create_ui_descriptor_set_layout(loader) }
+            .map_err(PresentError::Vulkan)?;
+        let descriptor_pool =
+            unsafe { device.create_ui_descriptor_pool(loader) }.map_err(PresentError::Vulkan)?;
+        let descriptor_set = unsafe {
+            descriptor_pool.allocate_ui_set(
+                loader,
+                descriptor_layout.raw(),
+                ui_buffer,
+                UI_UPLOAD_CAPACITY,
+            )
+        }
+        .map_err(PresentError::Vulkan)?;
+        let pipeline_layout =
+            unsafe { device.create_ui_pipeline_layout(loader, descriptor_layout.raw()) }
+                .map_err(PresentError::Vulkan)?;
+        let pipeline = unsafe {
+            device.create_ui_graphics_pipeline(
+                loader,
+                vertex_shader.raw(),
+                fragment_shader.raw(),
+                pipeline_layout.raw(),
+                targets.render_pass(),
+                extent,
+                false,
+            )
+        }
+        .map_err(PresentError::Vulkan)?;
+        Ok(Some(Self {
+            pipeline,
+            pipeline_layout,
+            descriptor_set,
+            _descriptor_pool: descriptor_pool,
+            _descriptor_layout: descriptor_layout,
+            _fragment_shader: fragment_shader,
+            _vertex_shader: vertex_shader,
+        }))
+    }
+}
+
+impl UiFrameTargets {
+    unsafe fn build(
+        loader: &VulkanLoader,
+        device: &LogicalDevice,
+        physical: VkPhysicalDevice,
+        swapchain: &Swapchain,
+        format: SurfaceFormat,
+        extent: Extent2D,
+    ) -> Result<Self, PresentError> {
+        let render_pass =
+            unsafe { device.create_ui_render_pass(loader, format.format, VK_FORMAT_D32_SFLOAT) }
+                .map_err(PresentError::Vulkan)?;
+        let depth_image = unsafe { device.create_depth_image(loader, physical, extent) }
+            .map_err(PresentError::Vulkan)?;
+        let depth_view = unsafe { device.create_depth_image_view(loader, depth_image.raw()) }
+            .map_err(PresentError::Vulkan)?;
+        let mut image_views = Vec::new();
+        image_views
+            .try_reserve_exact(swapchain.image_count())
+            .map_err(|_| PresentError::AllocationFailed)?;
+        for &image in swapchain.images() {
+            image_views.push(
+                unsafe { device.create_color_image_view(loader, image, format.format) }
+                    .map_err(PresentError::Vulkan)?,
+            );
+        }
+        let mut framebuffers = Vec::new();
+        framebuffers
+            .try_reserve_exact(image_views.len())
+            .map_err(|_| PresentError::AllocationFailed)?;
+        for view in &image_views {
+            framebuffers.push(
+                unsafe {
+                    device.create_framebuffer(
+                        loader,
+                        render_pass.raw(),
+                        view.raw(),
+                        depth_view.raw(),
+                        extent,
+                    )
+                }
+                .map_err(PresentError::Vulkan)?,
+            );
+        }
+        Ok(Self {
+            framebuffers,
+            depth_view,
+            depth_image,
+            image_views,
+            render_pass,
+        })
+    }
 }
 
 struct FrameState {
@@ -136,10 +359,23 @@ impl PresentEngine {
         };
         let devices = unsafe { loader.devices_and_handles(instance.raw()) }?;
         let (physical, _info, family) = pick_present_device(&loader, &devices, surface.raw())?;
-        let requests = [QueueCreateRequest {
-            family_index: family,
-            queue_count: 1,
-        }; 3];
+        // Do not submit duplicate queue-family entries to vkCreateDevice.
+        // The old repeated array was invalid Vulkan and some drivers corrupted
+        // their allocator while processing it.
+        let requests = [
+            QueueCreateRequest {
+                family_index: family,
+                queue_count: 1,
+            },
+            QueueCreateRequest {
+                family_index: 0,
+                queue_count: 0,
+            },
+            QueueCreateRequest {
+                family_index: 0,
+                queue_count: 0,
+            },
+        ];
         // SAFETY: handles live.
         let device = unsafe { loader.create_logical_device(physical, &requests)? };
         let Some(queue) = device.queue(family, 0) else {
@@ -162,8 +398,78 @@ impl PresentEngine {
                 0,
             )?
         };
+        let ui_targets = Some(unsafe {
+            UiFrameTargets::build(&loader, &device, physical, &swapchain, format, extent)?
+        });
+        let ui_staging = unsafe {
+            device.create_buffer(
+                &loader,
+                physical,
+                UI_UPLOAD_CAPACITY,
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            )?
+        };
+        let ui_device = unsafe {
+            device.create_buffer(
+                &loader,
+                physical,
+                UI_UPLOAD_CAPACITY,
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                    | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+                    | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                0,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            )?
+        };
+        let world_staging = unsafe {
+            device.create_buffer(
+                &loader,
+                physical,
+                WORLD_UPLOAD_CAPACITY,
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            )?
+        };
+        let world_device = unsafe {
+            device.create_buffer(
+                &loader,
+                physical,
+                WORLD_UPLOAD_CAPACITY,
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                0,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            )?
+        };
+        let ui_pipeline = Some(unsafe {
+            UiNativePipeline::build(
+                &loader,
+                &device,
+                ui_targets.as_ref().expect("UI targets were just created"),
+                ui_device.raw(),
+                extent,
+            )?
+        })
+        .flatten();
+        let world_pipeline = Some(unsafe {
+            WorldNativePipeline::build(
+                &loader,
+                &device,
+                ui_targets
+                    .as_ref()
+                    .expect("world targets were just created"),
+                world_device.raw(),
+                extent,
+            )?
+        })
+        .flatten();
         let frames = build_frame_states(&loader, &device, family, swapchain.image_count() as u32)?;
         Ok(Self {
+            ui_pipeline,
+            world_pipeline,
+            ui_targets,
             swapchain,
             surface,
             queue,
@@ -174,6 +480,15 @@ impl PresentEngine {
             extent,
             format,
             present_mode,
+            ui_staging,
+            ui_device,
+            world_staging,
+            world_device,
+            ui_upload: Vec::new(),
+            ui_draw_commands: Vec::new(),
+            world_upload: Vec::new(),
+            world_view_projection: [0.0; 16],
+            world_draw_commands: Vec::new(),
             loader,
             _device: device,
             _instance: instance,
@@ -200,8 +515,115 @@ impl PresentEngine {
         self.color = color;
     }
 
+    pub fn set_ui_upload(&mut self, bytes: &[u8]) -> Result<(), PresentError> {
+        if u64::try_from(bytes.len()).map_err(|_| PresentError::AllocationFailed)?
+            > UI_UPLOAD_CAPACITY
+        {
+            return Err(PresentError::AllocationFailed);
+        }
+        self.ui_upload
+            .try_reserve(bytes.len().saturating_sub(self.ui_upload.capacity()))
+            .map_err(|_| PresentError::AllocationFailed)?;
+        self.ui_upload.clear();
+        self.ui_upload.extend_from_slice(bytes);
+        Ok(())
+    }
+
+    pub fn set_ui_upload_ranges(
+        &mut self,
+        ranges: &[crate::subsystems::ui::UiUploadRange],
+        total_bytes: usize,
+    ) -> Result<(), PresentError> {
+        if u64::try_from(total_bytes).map_err(|_| PresentError::AllocationFailed)?
+            > UI_UPLOAD_CAPACITY
+        {
+            return Err(PresentError::AllocationFailed);
+        }
+        self.ui_upload
+            .try_reserve(total_bytes.saturating_sub(self.ui_upload.capacity()))
+            .map_err(|_| PresentError::AllocationFailed)?;
+        self.ui_upload.resize(total_bytes, 0);
+        for range in ranges {
+            let end = range
+                .offset
+                .checked_add(range.bytes.len())
+                .ok_or(PresentError::AllocationFailed)?;
+            if end > total_bytes {
+                return Err(PresentError::AllocationFailed);
+            }
+            self.ui_upload[range.offset..end].copy_from_slice(&range.bytes);
+        }
+        Ok(())
+    }
+
+    pub fn set_ui_draw_commands(
+        &mut self,
+        commands: &[crate::subsystems::renderer::UiDrawCommand],
+    ) -> Result<(), PresentError> {
+        self.ui_draw_commands
+            .try_reserve(
+                commands
+                    .len()
+                    .saturating_sub(self.ui_draw_commands.capacity()),
+            )
+            .map_err(|_| PresentError::AllocationFailed)?;
+        self.ui_draw_commands.clear();
+        self.ui_draw_commands.extend_from_slice(commands);
+        Ok(())
+    }
+
+    pub fn set_world_upload(
+        &mut self,
+        bytes: &[u8],
+        view_projection: [f32; 16],
+        commands: &[crate::subsystems::renderer::WorldDrawCommand],
+    ) -> Result<(), PresentError> {
+        if u64::try_from(bytes.len()).map_err(|_| PresentError::AllocationFailed)?
+            > WORLD_UPLOAD_CAPACITY
+            || bytes.is_empty()
+            || !view_projection.iter().all(|value| value.is_finite())
+            || commands.is_empty()
+            || commands.iter().any(|command| {
+                command.vertex_count == 0
+                    || command.instance_count == 0
+                    || command
+                        .first_vertex
+                        .checked_add(command.vertex_count)
+                        .is_none_or(|end| end > 36)
+            })
+        {
+            return Err(PresentError::AllocationFailed);
+        }
+        self.world_upload
+            .try_reserve(bytes.len().saturating_sub(self.world_upload.capacity()))
+            .map_err(|_| PresentError::AllocationFailed)?;
+        self.world_draw_commands
+            .try_reserve(
+                commands
+                    .len()
+                    .saturating_sub(self.world_draw_commands.capacity()),
+            )
+            .map_err(|_| PresentError::AllocationFailed)?;
+        self.world_upload.clear();
+        self.world_upload.extend_from_slice(bytes);
+        self.world_view_projection = view_projection;
+        self.world_draw_commands.clear();
+        self.world_draw_commands.extend_from_slice(commands);
+        Ok(())
+    }
+
+    pub const fn ui_upload_size(&self) -> usize {
+        self.ui_upload.len()
+    }
+
     /// Acquires the next image, clears it, and presents it.
     pub fn present_frame(&mut self) -> Result<PresentStatus, PresentError> {
+        if !self.world_upload.is_empty() && !self.ui_upload.is_empty() {
+            return Err(PresentError::AllocationFailed);
+        }
+        if !self.world_upload.is_empty() && self.world_pipeline.is_none() {
+            return Err(PresentError::Vulkan(VulkanLoaderError::InvalidQueuePlan));
+        }
         let frame_index = self.image_index as usize % self.frames.len();
         let frame = &self.frames[frame_index];
         frame.fence.wait(UINT64_MAX)?;
@@ -220,31 +642,153 @@ impl PresentEngine {
 
         // SAFETY: the buffer belongs to this engine's pool/device.
         unsafe {
+            let mut world_rendered = false;
             vulkan::reset_command_buffer(&self.loader, frame.buffer)?;
             vulkan::begin_command_buffer(&self.loader, frame.buffer)?;
-            cmd_image_layout_transition(
-                &self.loader,
-                self._device.raw(),
-                frame.buffer,
-                self.swapchain.images()[image as usize],
-                VK_IMAGE_LAYOUT_UNDEFINED,
-                VK_IMAGE_LAYOUT_GENERAL,
-            )?;
-            cmd_clear_image(
-                &self.loader,
-                self._device.raw(),
-                frame.buffer,
-                self.swapchain.images()[image as usize],
-                self.color,
-            )?;
-            cmd_image_layout_transition(
-                &self.loader,
-                self._device.raw(),
-                frame.buffer,
-                self.swapchain.images()[image as usize],
-                VK_IMAGE_LAYOUT_GENERAL,
-                VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            )?;
+            if !self.world_upload.is_empty()
+                && self.world_pipeline.is_some()
+                && self.ui_upload.is_empty()
+            {
+                self.world_staging
+                    .write_host_visible(&self.loader, 0, &self.world_upload, 256)?;
+                vulkan::cmd_copy_buffer_device(
+                    &self.loader,
+                    self._device.raw(),
+                    frame.buffer,
+                    self.world_staging.raw(),
+                    self.world_device.raw(),
+                    0,
+                    0,
+                    u64::try_from(self.world_upload.len())
+                        .map_err(|_| VulkanLoaderError::InvalidQueuePlan)?,
+                )?;
+                vulkan::cmd_buffer_barrier_device(
+                    &self.loader,
+                    self._device.raw(),
+                    frame.buffer,
+                    self.world_device.raw(),
+                    0,
+                    u64::try_from(self.world_upload.len())
+                        .map_err(|_| VulkanLoaderError::InvalidQueuePlan)?,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+                    VK_ACCESS_TRANSFER_WRITE_BIT,
+                    VK_ACCESS_SHADER_READ_BIT,
+                )?;
+                let pipeline = self
+                    .world_pipeline
+                    .as_ref()
+                    .ok_or(VulkanLoaderError::InvalidQueuePlan)?;
+                let targets = self
+                    .ui_targets
+                    .as_ref()
+                    .ok_or(VulkanLoaderError::InvalidQueuePlan)?;
+                let framebuffer = targets
+                    .framebuffer(image as usize)
+                    .ok_or(VulkanLoaderError::InvalidQueuePlan)?;
+                self._device.cmd_world_draw(
+                    &self.loader,
+                    frame.buffer,
+                    targets.render_pass(),
+                    framebuffer,
+                    pipeline.pipeline.raw(),
+                    pipeline.pipeline_layout.raw(),
+                    pipeline.descriptor_set,
+                    self.extent,
+                    self.color,
+                    self.world_view_projection,
+                    &self.world_draw_commands,
+                )?;
+                world_rendered = true;
+            } else if !self.ui_upload.is_empty() {
+                self.ui_staging
+                    .write_host_visible(&self.loader, 0, &self.ui_upload, 256)?;
+                vulkan::cmd_copy_buffer_device(
+                    &self.loader,
+                    self._device.raw(),
+                    frame.buffer,
+                    self.ui_staging.raw(),
+                    self.ui_device.raw(),
+                    0,
+                    0,
+                    u64::try_from(self.ui_upload.len())
+                        .map_err(|_| VulkanLoaderError::InvalidQueuePlan)?,
+                )?;
+                vulkan::cmd_buffer_barrier_device(
+                    &self.loader,
+                    self._device.raw(),
+                    frame.buffer,
+                    self.ui_device.raw(),
+                    0,
+                    u64::try_from(self.ui_upload.len())
+                        .map_err(|_| VulkanLoaderError::InvalidQueuePlan)?,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    if self.ui_pipeline.is_some() && !self.ui_draw_commands.is_empty() {
+                        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT
+                    } else {
+                        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
+                    },
+                    VK_ACCESS_TRANSFER_WRITE_BIT,
+                    if self.ui_pipeline.is_some() && !self.ui_draw_commands.is_empty() {
+                        VK_ACCESS_SHADER_READ_BIT
+                    } else {
+                        VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT
+                    },
+                )?;
+            }
+            if !world_rendered
+                && !self.ui_draw_commands.is_empty()
+                && self.ui_pipeline.is_some()
+                && self.ui_targets.is_some()
+            {
+                let pipeline = self
+                    .ui_pipeline
+                    .as_ref()
+                    .ok_or(VulkanLoaderError::InvalidQueuePlan)?;
+                let targets = self
+                    .ui_targets
+                    .as_ref()
+                    .ok_or(VulkanLoaderError::InvalidQueuePlan)?;
+                let framebuffer = targets
+                    .framebuffer(image as usize)
+                    .ok_or(VulkanLoaderError::InvalidQueuePlan)?;
+                self._device.cmd_ui_draw(
+                    &self.loader,
+                    frame.buffer,
+                    targets.render_pass(),
+                    framebuffer,
+                    pipeline.pipeline.raw(),
+                    pipeline.pipeline_layout.raw(),
+                    pipeline.descriptor_set,
+                    self.extent,
+                    self.color,
+                    &self.ui_draw_commands,
+                )?;
+            } else if !world_rendered {
+                cmd_image_layout_transition(
+                    &self.loader,
+                    self._device.raw(),
+                    frame.buffer,
+                    self.swapchain.images()[image as usize],
+                    VK_IMAGE_LAYOUT_UNDEFINED,
+                    VK_IMAGE_LAYOUT_GENERAL,
+                )?;
+                cmd_clear_image(
+                    &self.loader,
+                    self._device.raw(),
+                    frame.buffer,
+                    self.swapchain.images()[image as usize],
+                    self.color,
+                )?;
+                cmd_image_layout_transition(
+                    &self.loader,
+                    self._device.raw(),
+                    frame.buffer,
+                    self.swapchain.images()[image as usize],
+                    VK_IMAGE_LAYOUT_GENERAL,
+                    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                )?;
+            }
             vulkan::end_command_buffer(&self.loader, frame.buffer)?;
         }
         // SAFETY: all handles belong to the same live device.
@@ -277,6 +821,9 @@ impl PresentEngine {
         self.format = format;
         self.present_mode = present_mode;
         self.extent = extent;
+        self.ui_pipeline = None;
+        self.world_pipeline = None;
+        self.ui_targets = None;
         unsafe {
             self.swapchain.recreate(
                 &self.loader,
@@ -287,6 +834,38 @@ impl PresentEngine {
                 present_mode,
                 pick_composite_alpha(&self.loader, physical, self.surface.raw())?,
                 image_count,
+            )?
+        };
+        self.ui_targets = Some(unsafe {
+            UiFrameTargets::build(
+                &self.loader,
+                &self._device,
+                physical,
+                &self.swapchain,
+                format,
+                extent,
+            )?
+        });
+        self.ui_pipeline = unsafe {
+            UiNativePipeline::build(
+                &self.loader,
+                &self._device,
+                self.ui_targets
+                    .as_ref()
+                    .expect("UI targets were just rebuilt"),
+                self.ui_device.raw(),
+                extent,
+            )?
+        };
+        self.world_pipeline = unsafe {
+            WorldNativePipeline::build(
+                &self.loader,
+                &self._device,
+                self.ui_targets
+                    .as_ref()
+                    .expect("world targets were just rebuilt"),
+                self.world_device.raw(),
+                extent,
             )?
         };
         Ok(())

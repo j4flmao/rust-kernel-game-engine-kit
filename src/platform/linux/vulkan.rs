@@ -2,6 +2,7 @@
 #![allow(unsafe_code)]
 
 use core::ffi::c_void;
+use core::sync::atomic::{AtomicPtr, Ordering};
 
 use super::dl::{DlError, DynamicLibrary};
 use crate::platform::vulkan_policy::{
@@ -14,11 +15,22 @@ pub type VkDevice = *mut c_void;
 pub type VkQueue = *mut c_void;
 pub type VkCommandPool = *mut c_void;
 pub type VkCommandBuffer = *mut c_void;
+pub type VkBuffer = u64;
+pub type VkDeviceMemory = u64;
 pub type VkFence = *mut c_void;
 pub type VkSemaphore = *mut c_void;
 pub type VkSurfaceKHR = u64;
 pub type VkSwapchainKHR = u64;
 pub type VkImage = u64;
+pub type VkShaderModule = u64;
+pub type VkDescriptorSetLayout = u64;
+pub type VkDescriptorPool = u64;
+pub type VkDescriptorSet = u64;
+pub type VkPipelineLayout = u64;
+pub type VkRenderPass = u64;
+pub type VkPipeline = u64;
+pub type VkImageView = u64;
+pub type VkFramebuffer = u64;
 pub type VkResult = i32;
 pub type VkGetInstanceProcAddr = unsafe extern "C" fn(VkInstance, *const u8) -> *const c_void;
 pub type VkGetDeviceProcAddr = unsafe extern "C" fn(VkDevice, *const u8) -> *const c_void;
@@ -58,6 +70,136 @@ type VkBeginCommandBuffer =
     unsafe extern "C" fn(VkCommandBuffer, *const CommandBufferBeginInfo) -> VkResult;
 type VkEndCommandBuffer = unsafe extern "C" fn(VkCommandBuffer) -> VkResult;
 type VkResetCommandBuffer = unsafe extern "C" fn(VkCommandBuffer, u32) -> VkResult;
+type VkCreateBuffer = unsafe extern "C" fn(
+    VkDevice,
+    *const BufferCreateInfo,
+    *const c_void,
+    *mut VkBuffer,
+) -> VkResult;
+type VkCreateImage =
+    unsafe extern "C" fn(VkDevice, *const ImageCreateInfo, *const c_void, *mut VkImage) -> VkResult;
+type VkDestroyImage = unsafe extern "C" fn(VkDevice, VkImage, *const c_void);
+type VkGetImageMemoryRequirements =
+    unsafe extern "C" fn(VkDevice, VkImage, *mut MemoryRequirements);
+type VkBindImageMemory = unsafe extern "C" fn(VkDevice, VkImage, VkDeviceMemory, u64) -> VkResult;
+type VkCreateShaderModule = unsafe extern "C" fn(
+    VkDevice,
+    *const ShaderModuleCreateInfo,
+    *const c_void,
+    *mut VkShaderModule,
+) -> VkResult;
+type VkDestroyShaderModule = unsafe extern "C" fn(VkDevice, VkShaderModule, *const c_void);
+type VkCreateDescriptorSetLayout = unsafe extern "C" fn(
+    VkDevice,
+    *const DescriptorSetLayoutCreateInfo,
+    *const c_void,
+    *mut VkDescriptorSetLayout,
+) -> VkResult;
+type VkDestroyDescriptorSetLayout =
+    unsafe extern "C" fn(VkDevice, VkDescriptorSetLayout, *const c_void);
+type VkCreateDescriptorPool = unsafe extern "C" fn(
+    VkDevice,
+    *const DescriptorPoolCreateInfo,
+    *const c_void,
+    *mut VkDescriptorPool,
+) -> VkResult;
+type VkDestroyDescriptorPool = unsafe extern "C" fn(VkDevice, VkDescriptorPool, *const c_void);
+type VkAllocateDescriptorSets = unsafe extern "C" fn(
+    VkDevice,
+    *const DescriptorSetAllocateInfo,
+    *mut VkDescriptorSet,
+) -> VkResult;
+type VkUpdateDescriptorSets =
+    unsafe extern "C" fn(VkDevice, u32, *const WriteDescriptorSet, u32, *const c_void);
+type VkCmdBeginRenderPass = unsafe extern "C" fn(VkCommandBuffer, *const RenderPassBeginInfo, u32);
+type VkCmdEndRenderPass = unsafe extern "C" fn(VkCommandBuffer);
+type VkCmdBindPipeline = unsafe extern "C" fn(VkCommandBuffer, u32, VkPipeline);
+type VkCmdBindDescriptorSets = unsafe extern "C" fn(
+    VkCommandBuffer,
+    u32,
+    VkPipelineLayout,
+    u32,
+    u32,
+    *const VkDescriptorSet,
+    u32,
+    *const u32,
+);
+type VkCmdPushConstants =
+    unsafe extern "C" fn(VkCommandBuffer, VkPipelineLayout, u32, u32, u32, *const c_void);
+type VkCreateImageView = unsafe extern "C" fn(
+    VkDevice,
+    *const ImageViewCreateInfo,
+    *const c_void,
+    *mut VkImageView,
+) -> VkResult;
+type VkDestroyImageView = unsafe extern "C" fn(VkDevice, VkImageView, *const c_void);
+type VkCreateRenderPass = unsafe extern "C" fn(
+    VkDevice,
+    *const RenderPassCreateInfo,
+    *const c_void,
+    *mut VkRenderPass,
+) -> VkResult;
+type VkDestroyRenderPass = unsafe extern "C" fn(VkDevice, VkRenderPass, *const c_void);
+type VkCreateFramebuffer = unsafe extern "C" fn(
+    VkDevice,
+    *const FramebufferCreateInfo,
+    *const c_void,
+    *mut VkFramebuffer,
+) -> VkResult;
+type VkDestroyFramebuffer = unsafe extern "C" fn(VkDevice, VkFramebuffer, *const c_void);
+type VkCreateGraphicsPipelines = unsafe extern "C" fn(
+    VkDevice,
+    u64,
+    u32,
+    *const GraphicsPipelineCreateInfo,
+    *const c_void,
+    *mut VkPipeline,
+) -> VkResult;
+type VkDestroyPipeline = unsafe extern "C" fn(VkDevice, VkPipeline, *const c_void);
+type VkCreatePipelineLayout = unsafe extern "C" fn(
+    VkDevice,
+    *const PipelineLayoutCreateInfo,
+    *const c_void,
+    *mut VkPipelineLayout,
+) -> VkResult;
+type VkDestroyPipelineLayout = unsafe extern "C" fn(VkDevice, VkPipelineLayout, *const c_void);
+type VkDestroyBuffer = unsafe extern "C" fn(VkDevice, VkBuffer, *const c_void);
+type VkGetBufferMemoryRequirements =
+    unsafe extern "C" fn(VkDevice, VkBuffer, *mut MemoryRequirements);
+type VkAllocateMemory = unsafe extern "C" fn(
+    VkDevice,
+    *const MemoryAllocateInfo,
+    *const c_void,
+    *mut VkDeviceMemory,
+) -> VkResult;
+type VkFreeMemory = unsafe extern "C" fn(VkDevice, VkDeviceMemory, *const c_void);
+type VkBindBufferMemory = unsafe extern "C" fn(VkDevice, VkBuffer, VkDeviceMemory, u64) -> VkResult;
+type VkMapMemory =
+    unsafe extern "C" fn(VkDevice, VkDeviceMemory, u64, u64, u32, *mut *mut c_void) -> VkResult;
+type VkUnmapMemory = unsafe extern "C" fn(VkDevice, VkDeviceMemory);
+type VkFlushMappedMemoryRanges =
+    unsafe extern "C" fn(VkDevice, u32, *const MappedMemoryRange) -> VkResult;
+type VkGetPhysicalDeviceMemoryProperties =
+    unsafe extern "C" fn(VkPhysicalDevice, *mut PhysicalDeviceMemoryProperties);
+type VkCmdDispatch = unsafe extern "C" fn(VkCommandBuffer, u32, u32, u32);
+type VkCmdDrawIndexedIndirect = unsafe extern "C" fn(VkCommandBuffer, VkBuffer, u64, u32, u32);
+type VkCmdBindVertexBuffers =
+    unsafe extern "C" fn(VkCommandBuffer, u32, u32, *const VkBuffer, *const u64);
+type VkCmdDraw = unsafe extern "C" fn(VkCommandBuffer, u32, u32, u32, u32);
+type VkCmdCopyBuffer =
+    unsafe extern "C" fn(VkCommandBuffer, VkBuffer, VkBuffer, u32, *const BufferCopy);
+type VkCmdPipelineBarrier = unsafe extern "C" fn(
+    VkCommandBuffer,
+    u32,
+    u32,
+    u32,
+    u32,
+    *const c_void,
+    u32,
+    *const BufferMemoryBarrier,
+    u32,
+    *const c_void,
+);
 type VkCreateFence =
     unsafe extern "C" fn(VkDevice, *const FenceCreateInfo, *const c_void, *mut VkFence) -> VkResult;
 type VkDestroyFence = unsafe extern "C" fn(VkDevice, VkFence, *const c_void);
@@ -81,6 +223,7 @@ pub const VK_NOT_READY: VkResult = 1;
 
 pub const VK_FORMAT_B8G8R8A8_UNORM: u32 = 44;
 pub const VK_FORMAT_R8G8B8A8_UNORM: u32 = 37;
+pub const VK_FORMAT_D32_SFLOAT: u32 = 126;
 pub const VK_FORMAT_UNDEFINED: u32 = 0;
 pub const VK_COLOR_SPACE_SRGB_NONLINEAR_KHR: u32 = 0;
 
@@ -91,13 +234,34 @@ pub const VK_PRESENT_MODE_FIFO_RELAXED_KHR: u32 = 3;
 
 pub const VK_IMAGE_USAGE_TRANSFER_DST_BIT: u32 = 0x0000_0008;
 pub const VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT: u32 = 0x0000_0010;
+pub const VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT: u32 = 0x0000_0020;
 pub const VK_IMAGE_LAYOUT_UNDEFINED: u32 = 0;
 pub const VK_IMAGE_LAYOUT_GENERAL: u32 = 1;
+pub const VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL: u32 = 3;
 pub const VK_IMAGE_LAYOUT_PRESENT_SRC_KHR: u32 = 1000001002;
 pub const VK_IMAGE_ASPECT_COLOR_BIT: u32 = 0x0000_0001;
+pub const VK_IMAGE_ASPECT_DEPTH_BIT: u32 = 0x0000_0002;
 pub const VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR: u32 = 0x0000_0001;
 pub const VK_SHARING_MODE_EXCLUSIVE: u32 = 0;
 pub const VK_IMAGE_TILING_OPTIMAL: u32 = 0;
+pub const VK_BUFFER_USAGE_STORAGE_BUFFER_BIT: u32 = 0x0000_0020;
+pub const VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT: u32 = 0x0000_0100;
+pub const VK_BUFFER_USAGE_TRANSFER_SRC_BIT: u32 = 0x0000_0001;
+pub const VK_BUFFER_USAGE_TRANSFER_DST_BIT: u32 = 0x0000_0002;
+pub const VK_BUFFER_USAGE_VERTEX_BUFFER_BIT: u32 = 0x0000_0080;
+pub const VK_PIPELINE_STAGE_TRANSFER_BIT: u32 = 0x0000_0100;
+pub const VK_PIPELINE_STAGE_VERTEX_INPUT_BIT: u32 = 0x0000_0004;
+pub const VK_PIPELINE_STAGE_VERTEX_SHADER_BIT: u32 = 0x0000_0008;
+pub const VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT: u32 = 0x0000_0800;
+pub const VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT: u32 = 0x0000_0200;
+pub const VK_ACCESS_TRANSFER_WRITE_BIT: u32 = 0x0000_1000;
+pub const VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT: u32 = 0x0000_0004;
+pub const VK_ACCESS_SHADER_READ_BIT: u32 = 0x0000_0020;
+pub const VK_ACCESS_SHADER_WRITE_BIT: u32 = 0x0000_0040;
+pub const VK_ACCESS_INDIRECT_COMMAND_READ_BIT: u32 = 0x0000_0002;
+pub const VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT: u32 = 0x0000_0001;
+pub const VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT: u32 = 0x0000_0002;
+pub const VK_MEMORY_PROPERTY_HOST_COHERENT_BIT: u32 = 0x0000_0004;
 
 pub const VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT: u32 = 0x0000_0001;
 pub const VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT: u32 = 0x0000_0400;
@@ -107,6 +271,51 @@ pub const VK_SOURCE_STAGE_UNDEFINED: u32 = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 pub const VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR: u32 = 1000001000;
 pub const VK_STRUCTURE_TYPE_PRESENT_INFO_KHR: u32 = 1000001001;
 pub const VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER: u32 = 15;
+pub const VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO: u32 = 15;
+pub const VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO: u32 = 30;
+pub const VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO: u32 = 32;
+pub const VK_DESCRIPTOR_TYPE_STORAGE_BUFFER: u32 = 7;
+pub const VK_SHADER_STAGE_VERTEX_BIT: u32 = 0x0000_0001;
+pub const VK_SHADER_STAGE_FRAGMENT_BIT: u32 = 0x0000_0010;
+pub const VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO: u32 = 33;
+pub const VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO: u32 = 34;
+pub const VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET: u32 = 35;
+pub const VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT: u32 = 0x0000_0001;
+pub const VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO: u32 = 43;
+pub const VK_PIPELINE_BIND_POINT_GRAPHICS: u32 = 0;
+pub const VK_SUBPASS_CONTENTS_INLINE: u32 = 0;
+pub const VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO: u32 = 15;
+pub const VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO: u32 = 14;
+pub const VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO: u32 = 38;
+pub const VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO: u32 = 37;
+pub const VK_IMAGE_VIEW_TYPE_2D: u32 = 1;
+pub const VK_IMAGE_TYPE_2D: u32 = 1;
+pub const VK_SAMPLE_COUNT_1_BIT: u32 = 1;
+pub const VK_ATTACHMENT_LOAD_OP_CLEAR: u32 = 1;
+pub const VK_ATTACHMENT_STORE_OP_STORE: u32 = 0;
+pub const VK_ATTACHMENT_LOAD_OP_DONT_CARE: u32 = 2;
+pub const VK_ATTACHMENT_STORE_OP_DONT_CARE: u32 = 1;
+pub const VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL: u32 = 2;
+pub const VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO: u32 = 18;
+pub const VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO: u32 = 19;
+pub const VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO: u32 = 20;
+pub const VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO: u32 = 22;
+pub const VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO: u32 = 23;
+pub const VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO: u32 = 24;
+pub const VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO: u32 = 25;
+pub const VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO: u32 = 26;
+pub const VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO: u32 = 28;
+pub const VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST: u32 = 3;
+pub const VK_COMPARE_OP_LESS: u32 = 1;
+pub const VK_POLYGON_MODE_FILL: u32 = 0;
+pub const VK_BLEND_FACTOR_SRC_ALPHA: u32 = 6;
+pub const VK_BLEND_FACTOR_ONE: u32 = 1;
+pub const VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA: u32 = 7;
+pub const VK_BLEND_OP_ADD: u32 = 0;
+pub const VK_COLOR_COMPONENT_R_BIT: u32 = 1;
+pub const VK_COLOR_COMPONENT_G_BIT: u32 = 2;
+pub const VK_COLOR_COMPONENT_B_BIT: u32 = 4;
+pub const VK_COLOR_COMPONENT_A_BIT: u32 = 8;
 
 pub const VK_KHR_SURFACE: &[u8] = b"VK_KHR_surface\0";
 pub const VK_KHR_XLIB_SURFACE: &[u8] = b"VK_KHR_xlib_surface\0";
@@ -121,6 +330,348 @@ struct ApplicationInfo {
     engine_name: *const u8,
     engine_version: u32,
     api_version: u32,
+}
+
+#[repr(C)]
+struct ShaderModuleCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    code_size: usize,
+    code: *const u32,
+}
+#[repr(C)]
+struct DescriptorSetLayoutBinding {
+    binding: u32,
+    descriptor_type: u32,
+    descriptor_count: u32,
+    stage_flags: u32,
+    immutable_samplers: *const c_void,
+}
+#[repr(C)]
+struct DescriptorSetLayoutCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    binding_count: u32,
+    bindings: *const DescriptorSetLayoutBinding,
+}
+#[repr(C)]
+struct PushConstantRange {
+    stage_flags: u32,
+    offset: u32,
+    size: u32,
+}
+#[repr(C)]
+struct PipelineLayoutCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    set_layout_count: u32,
+    set_layouts: *const VkDescriptorSetLayout,
+    push_constant_range_count: u32,
+    push_constant_ranges: *const PushConstantRange,
+}
+#[repr(C)]
+struct DescriptorPoolSize {
+    descriptor_type: u32,
+    descriptor_count: u32,
+}
+#[repr(C)]
+struct DescriptorPoolCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    max_sets: u32,
+    pool_size_count: u32,
+    pool_sizes: *const DescriptorPoolSize,
+}
+#[repr(C)]
+struct DescriptorSetAllocateInfo {
+    s_type: u32,
+    next: *const c_void,
+    descriptor_pool: VkDescriptorPool,
+    descriptor_set_count: u32,
+    set_layouts: *const VkDescriptorSetLayout,
+}
+#[repr(C)]
+struct DescriptorBufferInfo {
+    buffer: VkBuffer,
+    offset: u64,
+    range: u64,
+}
+#[repr(C)]
+struct WriteDescriptorSet {
+    s_type: u32,
+    next: *const c_void,
+    dst_set: VkDescriptorSet,
+    dst_binding: u32,
+    dst_array_element: u32,
+    descriptor_count: u32,
+    descriptor_type: u32,
+    image_info: *const c_void,
+    buffer_info: *const DescriptorBufferInfo,
+    texel_buffer_view: *const c_void,
+}
+#[repr(C)]
+struct Rect2D {
+    offset: [i32; 2],
+    extent: Extent2D,
+}
+#[repr(C)]
+struct ClearValue {
+    color: [f32; 4],
+}
+#[repr(C)]
+struct Extent3D {
+    width: u32,
+    height: u32,
+    depth: u32,
+}
+#[repr(C)]
+struct RenderPassBeginInfo {
+    s_type: u32,
+    next: *const c_void,
+    render_pass: VkRenderPass,
+    framebuffer: u64,
+    render_area: Rect2D,
+    clear_value_count: u32,
+    clear_values: *const ClearValue,
+}
+#[repr(C)]
+struct ComponentMapping {
+    r: u32,
+    g: u32,
+    b: u32,
+    a: u32,
+}
+#[repr(C)]
+struct ImageCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    image_type: u32,
+    format: u32,
+    extent: Extent3D,
+    mip_levels: u32,
+    array_layers: u32,
+    samples: u32,
+    tiling: u32,
+    usage: u32,
+    sharing_mode: u32,
+    queue_family_index_count: u32,
+    queue_family_indices: *const u32,
+    initial_layout: u32,
+}
+#[repr(C)]
+struct ImageViewCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    image: VkImage,
+    view_type: u32,
+    format: u32,
+    components: ComponentMapping,
+    subresource_range: ImageSubresourceRange,
+}
+#[repr(C)]
+struct AttachmentDescription {
+    flags: u32,
+    format: u32,
+    samples: u32,
+    load_op: u32,
+    store_op: u32,
+    stencil_load_op: u32,
+    stencil_store_op: u32,
+    initial_layout: u32,
+    final_layout: u32,
+}
+#[repr(C)]
+struct AttachmentReference {
+    attachment: u32,
+    layout: u32,
+}
+#[repr(C)]
+struct SubpassDescription {
+    flags: u32,
+    pipeline_bind_point: u32,
+    input_attachment_count: u32,
+    input_attachments: *const c_void,
+    color_attachment_count: u32,
+    color_attachments: *const AttachmentReference,
+    resolve_attachments: *const c_void,
+    depth_stencil_attachment: *const c_void,
+    preserve_attachment_count: u32,
+    preserve_attachments: *const u32,
+}
+#[repr(C)]
+struct RenderPassCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    attachment_count: u32,
+    attachments: *const AttachmentDescription,
+    subpass_count: u32,
+    subpasses: *const SubpassDescription,
+    dependency_count: u32,
+    dependencies: *const c_void,
+}
+#[repr(C)]
+struct FramebufferCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    render_pass: VkRenderPass,
+    attachment_count: u32,
+    attachments: *const VkImageView,
+    width: u32,
+    height: u32,
+    layers: u32,
+}
+#[repr(C)]
+struct PipelineShaderStageCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    stage: u32,
+    module: VkShaderModule,
+    name: *const u8,
+    specialization_info: *const c_void,
+}
+#[repr(C)]
+struct PipelineVertexInputStateCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    vertex_binding_description_count: u32,
+    vertex_binding_descriptions: *const c_void,
+    vertex_attribute_description_count: u32,
+    vertex_attribute_descriptions: *const c_void,
+}
+#[repr(C)]
+struct PipelineInputAssemblyStateCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    topology: u32,
+    primitive_restart_enable: u32,
+}
+#[repr(C)]
+struct Viewport {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    min_depth: f32,
+    max_depth: f32,
+}
+#[repr(C)]
+struct PipelineViewportStateCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    viewport_count: u32,
+    viewports: *const Viewport,
+    scissor_count: u32,
+    scissors: *const Rect2D,
+}
+#[repr(C)]
+struct PipelineRasterizationStateCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    depth_clamp_enable: u32,
+    rasterizer_discard_enable: u32,
+    polygon_mode: u32,
+    cull_mode: u32,
+    front_face: u32,
+    depth_bias_enable: u32,
+    depth_bias_constant_factor: f32,
+    depth_bias_clamp: f32,
+    depth_bias_slope_factor: f32,
+    line_width: f32,
+}
+#[repr(C)]
+struct PipelineMultisampleStateCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    rasterization_samples: u32,
+    sample_shading_enable: u32,
+    min_sample_shading: f32,
+    sample_mask: *const u32,
+    alpha_to_coverage_enable: u32,
+    alpha_to_one_enable: u32,
+}
+#[repr(C)]
+struct PipelineDepthStencilStateCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    depth_test_enable: u32,
+    depth_write_enable: u32,
+    depth_compare_op: u32,
+    depth_bounds_test_enable: u32,
+    stencil_test_enable: u32,
+    front: StencilOpState,
+    back: StencilOpState,
+    min_depth_bounds: f32,
+    max_depth_bounds: f32,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct StencilOpState {
+    fail_op: u32,
+    pass_op: u32,
+    depth_fail_op: u32,
+    compare_op: u32,
+    compare_mask: u32,
+    write_mask: u32,
+    reference: u32,
+}
+#[repr(C)]
+struct PipelineColorBlendAttachmentState {
+    blend_enable: u32,
+    src_color_blend_factor: u32,
+    dst_color_blend_factor: u32,
+    color_blend_op: u32,
+    src_alpha_blend_factor: u32,
+    dst_alpha_blend_factor: u32,
+    alpha_blend_op: u32,
+    color_write_mask: u32,
+}
+#[repr(C)]
+struct PipelineColorBlendStateCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    logic_op_enable: u32,
+    logic_op: u32,
+    attachment_count: u32,
+    attachments: *const PipelineColorBlendAttachmentState,
+    blend_constants: [f32; 4],
+}
+#[repr(C)]
+struct GraphicsPipelineCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    stage_count: u32,
+    stages: *const PipelineShaderStageCreateInfo,
+    vertex_input_state: *const PipelineVertexInputStateCreateInfo,
+    input_assembly_state: *const PipelineInputAssemblyStateCreateInfo,
+    tessellation_state: *const c_void,
+    viewport_state: *const PipelineViewportStateCreateInfo,
+    rasterization_state: *const PipelineRasterizationStateCreateInfo,
+    multisample_state: *const PipelineMultisampleStateCreateInfo,
+    depth_stencil_state: *const c_void,
+    color_blend_state: *const PipelineColorBlendStateCreateInfo,
+    dynamic_state: *const c_void,
+    layout: VkPipelineLayout,
+    render_pass: VkRenderPass,
+    subpass: u32,
+    base_pipeline_handle: VkPipeline,
+    base_pipeline_index: i32,
 }
 #[repr(C)]
 struct InstanceCreateInfo {
@@ -294,7 +845,7 @@ pub struct ImageMemoryBarrier {
     pub image: VkImage,
     pub subresource_range: ImageSubresourceRange,
 }
-#[repr(C)]
+#[repr(C, align(8))]
 struct PhysicalDeviceProperties {
     bytes: [u8; 824],
 }
@@ -303,6 +854,7 @@ struct PhysicalDeviceProperties {
 struct QueueFamilyProperties {
     flags: u32,
     queue_count: u32,
+    timestamp_valid_bits: u32,
     min_image_transfer_granularity: [u32; 3],
 }
 
@@ -463,6 +1015,303 @@ pub unsafe fn reset_command_buffer(
         Err(VulkanLoaderError::Api(result))
     }
 }
+#[repr(C)]
+struct BufferCreateInfo {
+    s_type: u32,
+    next: *const c_void,
+    flags: u32,
+    size: u64,
+    usage: u32,
+    sharing_mode: u32,
+    queue_family_index_count: u32,
+    queue_family_indices: *const u32,
+}
+#[repr(C)]
+struct MemoryRequirements {
+    size: u64,
+    alignment: u64,
+    memory_type_bits: u32,
+}
+#[repr(C)]
+struct BufferCopy {
+    src_offset: u64,
+    dst_offset: u64,
+    size: u64,
+}
+#[repr(C)]
+struct MappedMemoryRange {
+    s_type: u32,
+    next: *const c_void,
+    memory: VkDeviceMemory,
+    offset: u64,
+    size: u64,
+}
+#[repr(C)]
+struct MemoryAllocateInfo {
+    s_type: u32,
+    next: *const c_void,
+    allocation_size: u64,
+    memory_type_index: u32,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct MemoryType {
+    property_flags: u32,
+    heap_index: u32,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct MemoryHeap {
+    size: u64,
+    flags: u32,
+    _padding: u32,
+}
+#[repr(C)]
+struct PhysicalDeviceMemoryProperties {
+    memory_type_count: u32,
+    memory_types: [MemoryType; 32],
+    memory_heap_count: u32,
+    memory_heaps: [MemoryHeap; 16],
+}
+
+/// Records a compute dispatch for a live command buffer.
+///
+/// # Safety
+/// `buffer` must be a live command buffer currently recording, and the caller
+/// must have bound a compatible compute pipeline and descriptor state.
+pub unsafe fn cmd_dispatch(
+    loader: &VulkanLoader,
+    buffer: VkCommandBuffer,
+    groups: [u32; 3],
+) -> Result<(), VulkanLoaderError> {
+    if buffer.is_null() || groups.contains(&0) {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let dispatch: VkCmdDispatch = loader.command(b"vkCmdDispatch\0")?;
+    // SAFETY: caller guarantees a recording command buffer and compatible state.
+    unsafe { dispatch(buffer, groups[0], groups[1], groups[2]) };
+    Ok(())
+}
+
+/// Records a compute dispatch through the logical-device dispatch table.
+///
+/// This is the preferred entry point for native rendering. The legacy
+/// [`cmd_dispatch`] wrapper remains available for loader-level bring-up, but
+/// a live device must use this variant so ICD-specific command pointers are
+/// resolved through `vkGetDeviceProcAddr`.
+///
+/// # Safety
+/// `device` and `buffer` must be live objects from the same Vulkan device.
+/// The command buffer must be recording with a compatible compute pipeline.
+pub unsafe fn cmd_dispatch_device(
+    loader: &VulkanLoader,
+    device: VkDevice,
+    buffer: VkCommandBuffer,
+    groups: [u32; 3],
+) -> Result<(), VulkanLoaderError> {
+    if device.is_null() || buffer.is_null() || groups.contains(&0) {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let dispatch: VkCmdDispatch = loader.device_command(device, b"vkCmdDispatch\0")?;
+    // SAFETY: caller guarantees a recording command buffer and compatible state.
+    unsafe { dispatch(buffer, groups[0], groups[1], groups[2]) };
+    Ok(())
+}
+
+/// Records indexed indirect draws for a live command buffer.
+///
+/// # Safety
+/// `buffer` and `indirect` must belong to the live device, the command buffer
+/// must be recording, and the indirect range must be valid for the bound draw
+/// pipeline.
+pub unsafe fn cmd_draw_indexed_indirect(
+    loader: &VulkanLoader,
+    buffer: VkCommandBuffer,
+    indirect: VkBuffer,
+    offset: u64,
+    draw_count: u32,
+    stride: u32,
+) -> Result<(), VulkanLoaderError> {
+    if buffer.is_null() || indirect == 0 || draw_count == 0 || stride == 0 {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let draw: VkCmdDrawIndexedIndirect = loader.command(b"vkCmdDrawIndexedIndirect\0")?;
+    // SAFETY: caller guarantees a recording command buffer and valid buffer range.
+    unsafe { draw(buffer, indirect, offset, draw_count, stride) };
+    Ok(())
+}
+
+/// Records indexed indirect draws through the logical-device dispatch table.
+///
+/// # Safety
+/// `device`, `buffer`, and `indirect` must belong to the same live device;
+/// the command buffer must be recording and the indirect range must be valid
+/// for the bound graphics pipeline.
+pub unsafe fn cmd_draw_indexed_indirect_device(
+    loader: &VulkanLoader,
+    device: VkDevice,
+    buffer: VkCommandBuffer,
+    indirect: VkBuffer,
+    offset: u64,
+    draw_count: u32,
+    stride: u32,
+) -> Result<(), VulkanLoaderError> {
+    if device.is_null() || buffer.is_null() || indirect == 0 || draw_count == 0 || stride == 0 {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let draw: VkCmdDrawIndexedIndirect =
+        loader.device_command(device, b"vkCmdDrawIndexedIndirect\0")?;
+    // SAFETY: caller guarantees a recording command buffer and valid buffer range.
+    unsafe { draw(buffer, indirect, offset, draw_count, stride) };
+    Ok(())
+}
+
+/// Binds one UI vertex/instance buffer through the device dispatch table.
+///
+/// # Safety
+///
+/// The caller must provide a live device dispatch table, a recording command
+/// buffer, and a live vertex buffer whose range is valid for the command.
+pub unsafe fn cmd_bind_vertex_buffer_device(
+    loader: &VulkanLoader,
+    device: VkDevice,
+    command: VkCommandBuffer,
+    buffer: VkBuffer,
+    offset: u64,
+) -> Result<(), VulkanLoaderError> {
+    if device.is_null() || command.is_null() || buffer == 0 {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let bind: VkCmdBindVertexBuffers =
+        loader.device_command(device, b"vkCmdBindVertexBuffers\0")?;
+    unsafe { bind(command, 0, 1, &buffer, &offset) };
+    Ok(())
+}
+
+/// Records one non-indexed UI draw through the device dispatch table.
+///
+/// # Safety
+///
+/// The caller must provide a live device dispatch table and a recording command
+/// buffer configured with a compatible graphics pipeline and resources.
+pub unsafe fn cmd_draw_device(
+    loader: &VulkanLoader,
+    device: VkDevice,
+    command: VkCommandBuffer,
+    vertex_count: u32,
+    instance_count: u32,
+    first_vertex: u32,
+    first_instance: u32,
+) -> Result<(), VulkanLoaderError> {
+    if device.is_null() || command.is_null() || vertex_count == 0 || instance_count == 0 {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let draw: VkCmdDraw = loader.device_command(device, b"vkCmdDraw\0")?;
+    unsafe {
+        draw(
+            command,
+            vertex_count,
+            instance_count,
+            first_vertex,
+            first_instance,
+        )
+    };
+    Ok(())
+}
+
+/// Records one bounded staging-to-device buffer copy.
+///
+/// # Safety
+/// All handles must belong to the same live device and the command buffer must
+/// be recording. The caller must provide the required transfer barriers.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn cmd_copy_buffer_device(
+    loader: &VulkanLoader,
+    device: VkDevice,
+    command: VkCommandBuffer,
+    source: VkBuffer,
+    destination: VkBuffer,
+    source_offset: u64,
+    destination_offset: u64,
+    size: u64,
+) -> Result<(), VulkanLoaderError> {
+    if device.is_null() || command.is_null() || source == 0 || destination == 0 || size == 0 {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let source_end = source_offset
+        .checked_add(size)
+        .ok_or(VulkanLoaderError::InvalidQueuePlan)?;
+    let destination_end = destination_offset
+        .checked_add(size)
+        .ok_or(VulkanLoaderError::InvalidQueuePlan)?;
+    if source_end < source_offset || destination_end < destination_offset {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let copy: VkCmdCopyBuffer = loader.device_command(device, b"vkCmdCopyBuffer\0")?;
+    let region = BufferCopy {
+        src_offset: source_offset,
+        dst_offset: destination_offset,
+        size,
+    };
+    unsafe { copy(command, source, destination, 1, &region) };
+    Ok(())
+}
+
+/// Inserts one buffer barrier for a transfer/compute/draw handoff.
+///
+/// # Safety
+/// `command` must be recording and `buffer` must belong to `device`.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn cmd_buffer_barrier_device(
+    loader: &VulkanLoader,
+    device: VkDevice,
+    command: VkCommandBuffer,
+    buffer: VkBuffer,
+    offset: u64,
+    size: u64,
+    src_stage: u32,
+    dst_stage: u32,
+    src_access: u32,
+    dst_access: u32,
+) -> Result<(), VulkanLoaderError> {
+    if device.is_null()
+        || command.is_null()
+        || buffer == 0
+        || size == 0
+        || src_stage == 0
+        || dst_stage == 0
+        || offset.checked_add(size).is_none()
+    {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let barrier: VkCmdPipelineBarrier = loader.device_command(device, b"vkCmdPipelineBarrier\0")?;
+    let info = BufferMemoryBarrier {
+        s_type: 44,
+        next: core::ptr::null(),
+        src_access_mask: src_access,
+        dst_access_mask: dst_access,
+        src_queue_family_index: u32::MAX,
+        dst_queue_family_index: u32::MAX,
+        buffer,
+        offset,
+        size,
+    };
+    unsafe {
+        barrier(
+            command,
+            src_stage,
+            dst_stage,
+            0,
+            0,
+            core::ptr::null(),
+            1,
+            &info,
+            0,
+            core::ptr::null(),
+        )
+    };
+    Ok(())
+}
 
 pub struct NativeCommandPool {
     handle: VkCommandPool,
@@ -511,6 +1360,227 @@ pub struct NativeSemaphore {
     device: VkDevice,
     destroy: VkDestroySemaphore,
 }
+
+pub struct NativeShaderModule {
+    handle: VkShaderModule,
+    device: VkDevice,
+    destroy: VkDestroyShaderModule,
+}
+
+pub struct NativeDescriptorSetLayout {
+    handle: VkDescriptorSetLayout,
+    device: VkDevice,
+    destroy: VkDestroyDescriptorSetLayout,
+}
+
+impl NativeDescriptorSetLayout {
+    pub const fn raw(&self) -> VkDescriptorSetLayout {
+        self.handle
+    }
+}
+
+impl Drop for NativeDescriptorSetLayout {
+    fn drop(&mut self) {
+        unsafe { (self.destroy)(self.device, self.handle, core::ptr::null()) };
+    }
+}
+
+pub struct NativeDescriptorPool {
+    handle: VkDescriptorPool,
+    device: VkDevice,
+    destroy: VkDestroyDescriptorPool,
+}
+
+impl NativeDescriptorPool {
+    pub const fn raw(&self) -> VkDescriptorPool {
+        self.handle
+    }
+
+    /// Allocates one descriptor set and binds the UI storage buffer to it.
+    ///
+    /// # Safety
+    ///
+    /// The caller must keep this pool, the layout, and the buffer alive and
+    /// compatible with the device while the descriptor set is in use.
+    pub unsafe fn allocate_ui_set(
+        &self,
+        loader: &VulkanLoader,
+        layout: VkDescriptorSetLayout,
+        buffer: VkBuffer,
+        range: u64,
+    ) -> Result<VkDescriptorSet, VulkanLoaderError> {
+        if layout == 0 || buffer == 0 || range == 0 {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let allocate: VkAllocateDescriptorSets =
+            loader.device_command(self.device, b"vkAllocateDescriptorSets\0")?;
+        let layouts = [layout];
+        let info = DescriptorSetAllocateInfo {
+            s_type: VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            next: core::ptr::null(),
+            descriptor_pool: self.handle,
+            descriptor_set_count: 1,
+            set_layouts: layouts.as_ptr(),
+        };
+        let mut set = 0;
+        let result = unsafe { allocate(self.device, &info, &mut set) };
+        if result != VK_SUCCESS || set == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        let update: VkUpdateDescriptorSets =
+            loader.device_command(self.device, b"vkUpdateDescriptorSets\0")?;
+        let buffer_info = DescriptorBufferInfo {
+            buffer,
+            offset: 0,
+            range,
+        };
+        let write = WriteDescriptorSet {
+            s_type: VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            next: core::ptr::null(),
+            dst_set: set,
+            dst_binding: 0,
+            dst_array_element: 0,
+            descriptor_count: 1,
+            descriptor_type: VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            image_info: core::ptr::null(),
+            buffer_info: &buffer_info,
+            texel_buffer_view: core::ptr::null(),
+        };
+        unsafe { update(self.device, 1, &write, 0, core::ptr::null()) };
+        Ok(set)
+    }
+}
+
+impl Drop for NativeDescriptorPool {
+    fn drop(&mut self) {
+        unsafe { (self.destroy)(self.device, self.handle, core::ptr::null()) };
+    }
+}
+
+pub struct NativePipelineLayout {
+    handle: VkPipelineLayout,
+    device: VkDevice,
+    destroy: VkDestroyPipelineLayout,
+}
+
+impl NativePipelineLayout {
+    pub const fn raw(&self) -> VkPipelineLayout {
+        self.handle
+    }
+}
+
+impl Drop for NativePipelineLayout {
+    fn drop(&mut self) {
+        unsafe { (self.destroy)(self.device, self.handle, core::ptr::null()) };
+    }
+}
+
+pub struct NativeImageView {
+    handle: VkImageView,
+    device: VkDevice,
+    destroy: VkDestroyImageView,
+}
+
+impl NativeImageView {
+    pub const fn raw(&self) -> VkImageView {
+        self.handle
+    }
+}
+
+impl Drop for NativeImageView {
+    fn drop(&mut self) {
+        unsafe { (self.destroy)(self.device, self.handle, core::ptr::null()) };
+    }
+}
+
+pub struct NativeDepthImage {
+    handle: VkImage,
+    memory: VkDeviceMemory,
+    device: VkDevice,
+    destroy_image: VkDestroyImage,
+    free_memory: VkFreeMemory,
+}
+
+impl NativeDepthImage {
+    pub const fn raw(&self) -> VkImage {
+        self.handle
+    }
+}
+
+impl Drop for NativeDepthImage {
+    fn drop(&mut self) {
+        unsafe {
+            (self.destroy_image)(self.device, self.handle, core::ptr::null());
+            (self.free_memory)(self.device, self.memory, core::ptr::null());
+        }
+    }
+}
+
+pub struct NativeRenderPass {
+    handle: VkRenderPass,
+    device: VkDevice,
+    destroy: VkDestroyRenderPass,
+}
+
+impl NativeRenderPass {
+    pub const fn raw(&self) -> VkRenderPass {
+        self.handle
+    }
+}
+
+impl Drop for NativeRenderPass {
+    fn drop(&mut self) {
+        unsafe { (self.destroy)(self.device, self.handle, core::ptr::null()) };
+    }
+}
+
+pub struct NativeFramebuffer {
+    handle: VkFramebuffer,
+    device: VkDevice,
+    destroy: VkDestroyFramebuffer,
+}
+
+impl NativeFramebuffer {
+    pub const fn raw(&self) -> VkFramebuffer {
+        self.handle
+    }
+}
+
+impl Drop for NativeFramebuffer {
+    fn drop(&mut self) {
+        unsafe { (self.destroy)(self.device, self.handle, core::ptr::null()) };
+    }
+}
+
+pub struct NativeGraphicsPipeline {
+    handle: VkPipeline,
+    device: VkDevice,
+    destroy: VkDestroyPipeline,
+}
+
+impl NativeGraphicsPipeline {
+    pub const fn raw(&self) -> VkPipeline {
+        self.handle
+    }
+}
+
+impl Drop for NativeGraphicsPipeline {
+    fn drop(&mut self) {
+        unsafe { (self.destroy)(self.device, self.handle, core::ptr::null()) };
+    }
+}
+
+impl NativeShaderModule {
+    pub const fn raw(&self) -> VkShaderModule {
+        self.handle
+    }
+}
+
+impl Drop for NativeShaderModule {
+    fn drop(&mut self) {
+        unsafe { (self.destroy)(self.device, self.handle, core::ptr::null()) };
+    }
+}
 impl NativeSemaphore {
     pub const fn raw(&self) -> VkSemaphore {
         self.handle
@@ -519,6 +1589,150 @@ impl NativeSemaphore {
 impl Drop for NativeSemaphore {
     fn drop(&mut self) {
         unsafe { (self.destroy)(self.device, self.handle, core::ptr::null()) };
+    }
+}
+
+/// Owns a Vulkan buffer and its backing allocation.
+pub struct NativeBuffer {
+    handle: VkBuffer,
+    memory: VkDeviceMemory,
+    size: u64,
+    device: VkDevice,
+    destroy_buffer: VkDestroyBuffer,
+    free_memory: VkFreeMemory,
+    memory_properties: u32,
+}
+
+impl NativeBuffer {
+    pub const fn raw(&self) -> VkBuffer {
+        self.handle
+    }
+
+    pub const fn memory(&self) -> VkDeviceMemory {
+        self.memory
+    }
+
+    pub const fn size(&self) -> u64 {
+        self.size
+    }
+
+    pub fn write_host_coherent(
+        &self,
+        loader: &VulkanLoader,
+        offset: u64,
+        bytes: &[u8],
+    ) -> Result<(), VulkanLoaderError> {
+        let required = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        if self.memory_properties & required != required {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let length = u64::try_from(bytes.len()).map_err(|_| VulkanLoaderError::InvalidQueuePlan)?;
+        let end = offset
+            .checked_add(length)
+            .ok_or(VulkanLoaderError::InvalidQueuePlan)?;
+        if end > self.size {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let map: VkMapMemory = loader.device_command(self.device, b"vkMapMemory\0")?;
+        let unmap: VkUnmapMemory = loader.device_command(self.device, b"vkUnmapMemory\0")?;
+        let mut mapped = core::ptr::null_mut();
+        let result = unsafe { map(self.device, self.memory, offset, length, 0, &mut mapped) };
+        if result != VK_SUCCESS || mapped.is_null() {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), mapped.cast::<u8>(), bytes.len()) };
+        unsafe { unmap(self.device, self.memory) };
+        Ok(())
+    }
+
+    /// Writes host-visible memory and flushes the aligned range when the
+    /// allocation is non-coherent. `non_coherent_atom_size` must come from the
+    /// physical-device limits and must be non-zero for non-coherent memory.
+    pub fn write_host_visible(
+        &self,
+        loader: &VulkanLoader,
+        offset: u64,
+        bytes: &[u8],
+        non_coherent_atom_size: u64,
+    ) -> Result<(), VulkanLoaderError> {
+        if self.memory_properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT == 0 {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let length = u64::try_from(bytes.len()).map_err(|_| VulkanLoaderError::InvalidQueuePlan)?;
+        let end = offset
+            .checked_add(length)
+            .ok_or(VulkanLoaderError::InvalidQueuePlan)?;
+        if end > self.size {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let coherent = self.memory_properties & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT != 0;
+        let atom = if coherent { 1 } else { non_coherent_atom_size };
+        if atom == 0 {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let mapped_offset = offset / atom * atom;
+        let mapped_end = end
+            .checked_add(atom - 1)
+            .ok_or(VulkanLoaderError::InvalidQueuePlan)?
+            / atom
+            * atom;
+        if mapped_end > self.size {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let map: VkMapMemory = loader.device_command(self.device, b"vkMapMemory\0")?;
+        let unmap: VkUnmapMemory = loader.device_command(self.device, b"vkUnmapMemory\0")?;
+        let mut mapped = core::ptr::null_mut();
+        let result = unsafe {
+            map(
+                self.device,
+                self.memory,
+                mapped_offset,
+                mapped_end - mapped_offset,
+                0,
+                &mut mapped,
+            )
+        };
+        if result != VK_SUCCESS || mapped.is_null() {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        let relative = usize::try_from(offset - mapped_offset)
+            .map_err(|_| VulkanLoaderError::InvalidQueuePlan)?;
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                mapped.cast::<u8>().add(relative),
+                bytes.len(),
+            )
+        };
+        if !coherent {
+            let flush: VkFlushMappedMemoryRanges =
+                loader.device_command(self.device, b"vkFlushMappedMemoryRanges\0")?;
+            let range = MappedMemoryRange {
+                s_type: 6,
+                next: core::ptr::null(),
+                memory: self.memory,
+                offset: mapped_offset,
+                size: mapped_end - mapped_offset,
+            };
+            let result = unsafe { flush(self.device, 1, &range) };
+            if result != VK_SUCCESS {
+                unsafe { unmap(self.device, self.memory) };
+                return Err(VulkanLoaderError::Api(result));
+            }
+        }
+        unsafe { unmap(self.device, self.memory) };
+        Ok(())
+    }
+}
+
+impl Drop for NativeBuffer {
+    fn drop(&mut self) {
+        // SAFETY: the wrapper owns both objects and drops them before the
+        // parent logical device.
+        unsafe {
+            (self.destroy_buffer)(self.device, self.handle, core::ptr::null());
+            (self.free_memory)(self.device, self.memory, core::ptr::null());
+        }
     }
 }
 impl NativeCommandPool {
@@ -580,12 +1794,1062 @@ impl LogicalDevice {
     pub const fn raw(&self) -> VkDevice {
         self.handle
     }
+
+    /// Creates an owned shader module from validated SPIR-V words.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the loader and logical device are live and that
+    /// `words` remains a valid SPIR-V module accepted by the device.
+    pub unsafe fn create_shader_module(
+        &self,
+        loader: &VulkanLoader,
+        words: &[u32],
+    ) -> Result<NativeShaderModule, VulkanLoaderError> {
+        if words.is_empty() || words[0] != 0x0723_0203 {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let create: VkCreateShaderModule =
+            loader.device_command(self.handle, b"vkCreateShaderModule\0")?;
+        let destroy: VkDestroyShaderModule =
+            loader.device_command(self.handle, b"vkDestroyShaderModule\0")?;
+        let info = ShaderModuleCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            code_size: words
+                .len()
+                .checked_mul(core::mem::size_of::<u32>())
+                .ok_or(VulkanLoaderError::InvalidQueuePlan)?,
+            code: words.as_ptr(),
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        Ok(NativeShaderModule {
+            handle,
+            device: self.handle,
+            destroy,
+        })
+    }
+
+    /// Creates the descriptor layout used by the UI vertex shader.
+    /// Binding zero is a read-only storage buffer containing packed UI items.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the loader and logical device are live for the
+    /// duration of the Vulkan call and subsequent owned-resource lifetime.
+    pub unsafe fn create_ui_descriptor_set_layout(
+        &self,
+        loader: &VulkanLoader,
+    ) -> Result<NativeDescriptorSetLayout, VulkanLoaderError> {
+        let create: VkCreateDescriptorSetLayout =
+            loader.device_command(self.handle, b"vkCreateDescriptorSetLayout\0")?;
+        let destroy: VkDestroyDescriptorSetLayout =
+            loader.device_command(self.handle, b"vkDestroyDescriptorSetLayout\0")?;
+        let binding = DescriptorSetLayoutBinding {
+            binding: 0,
+            descriptor_type: VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            descriptor_count: 1,
+            stage_flags: VK_SHADER_STAGE_VERTEX_BIT,
+            immutable_samplers: core::ptr::null(),
+        };
+        let info = DescriptorSetLayoutCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            binding_count: 1,
+            bindings: &binding,
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        Ok(NativeDescriptorSetLayout {
+            handle,
+            device: self.handle,
+            destroy,
+        })
+    }
+
+    /// Creates a bounded one-set pool for the UI storage-buffer binding.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the loader and logical device are live for the
+    /// duration of the Vulkan call and subsequent owned-resource lifetime.
+    pub unsafe fn create_ui_descriptor_pool(
+        &self,
+        loader: &VulkanLoader,
+    ) -> Result<NativeDescriptorPool, VulkanLoaderError> {
+        let create: VkCreateDescriptorPool =
+            loader.device_command(self.handle, b"vkCreateDescriptorPool\0")?;
+        let destroy: VkDestroyDescriptorPool =
+            loader.device_command(self.handle, b"vkDestroyDescriptorPool\0")?;
+        let size = DescriptorPoolSize {
+            descriptor_type: VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            descriptor_count: 1,
+        };
+        let info = DescriptorPoolCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+            max_sets: 1,
+            pool_size_count: 1,
+            pool_sizes: &size,
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        Ok(NativeDescriptorPool {
+            handle,
+            device: self.handle,
+            destroy,
+        })
+    }
+
+    /// Creates the UI pipeline layout: one storage-buffer set and an 8-byte
+    /// vertex push constant containing the viewport dimensions.
+    ///
+    /// # Safety
+    ///
+    /// The caller must provide a live descriptor-set layout created for this
+    /// device and keep it alive until the returned pipeline layout is dropped.
+    pub unsafe fn create_ui_pipeline_layout(
+        &self,
+        loader: &VulkanLoader,
+        descriptor_set_layout: VkDescriptorSetLayout,
+    ) -> Result<NativePipelineLayout, VulkanLoaderError> {
+        if descriptor_set_layout == 0 {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let create: VkCreatePipelineLayout =
+            loader.device_command(self.handle, b"vkCreatePipelineLayout\0")?;
+        let destroy: VkDestroyPipelineLayout =
+            loader.device_command(self.handle, b"vkDestroyPipelineLayout\0")?;
+        let range = PushConstantRange {
+            stage_flags: VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            offset: 0,
+            // The UI uses the first eight bytes; the world pass uses a 4x4
+            // view-projection matrix.  A shared layout keeps the present
+            // render pass composable while preserving one descriptor ABI.
+            size: 64,
+        };
+        let info = PipelineLayoutCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            set_layout_count: 1,
+            set_layouts: &descriptor_set_layout,
+            push_constant_range_count: 1,
+            push_constant_ranges: &range,
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        Ok(NativePipelineLayout {
+            handle,
+            device: self.handle,
+            destroy,
+        })
+    }
+
+    /// Records the backend-neutral UI graphics commands into an active
+    /// framebuffer. Resource creation remains owned by the presentation lane.
+    ///
+    /// # Safety
+    ///
+    /// The caller must provide live, device-compatible Vulkan handles, an
+    /// active command buffer/render pass scope, and draw commands whose ranges
+    /// are valid for the bound descriptor and pipeline resources.
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn cmd_ui_draw(
+        &self,
+        loader: &VulkanLoader,
+        command_buffer: VkCommandBuffer,
+        render_pass: VkRenderPass,
+        framebuffer: u64,
+        pipeline: VkPipeline,
+        pipeline_layout: VkPipelineLayout,
+        descriptor_set: VkDescriptorSet,
+        extent: Extent2D,
+        clear_color: [f32; 4],
+        draw_commands: &[crate::subsystems::renderer::UiDrawCommand],
+    ) -> Result<(), VulkanLoaderError> {
+        if command_buffer.is_null()
+            || render_pass == 0
+            || framebuffer == 0
+            || pipeline == 0
+            || pipeline_layout == 0
+            || descriptor_set == 0
+            || extent.width == 0
+            || extent.height == 0
+            || draw_commands.is_empty()
+        {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        if draw_commands.iter().any(|command| {
+            command.vertex_count == 0
+                || command.instance_count == 0
+                || command
+                    .first_vertex
+                    .checked_add(command.vertex_count)
+                    .is_none_or(|end| end > 36)
+        }) {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let begin: VkCmdBeginRenderPass =
+            loader.device_command(self.handle, b"vkCmdBeginRenderPass\0")?;
+        let end: VkCmdEndRenderPass =
+            loader.device_command(self.handle, b"vkCmdEndRenderPass\0")?;
+        let bind_pipeline: VkCmdBindPipeline =
+            loader.device_command(self.handle, b"vkCmdBindPipeline\0")?;
+        let bind_sets: VkCmdBindDescriptorSets =
+            loader.device_command(self.handle, b"vkCmdBindDescriptorSets\0")?;
+        let push_constants: VkCmdPushConstants =
+            loader.device_command(self.handle, b"vkCmdPushConstants\0")?;
+        let draw: VkCmdDraw = loader.device_command(self.handle, b"vkCmdDraw\0")?;
+        let clear = [
+            ClearValue { color: clear_color },
+            ClearValue {
+                color: [1.0, 0.0, 0.0, 0.0],
+            },
+        ];
+        let info = RenderPassBeginInfo {
+            s_type: VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            next: core::ptr::null(),
+            render_pass,
+            framebuffer,
+            render_area: Rect2D {
+                offset: [0, 0],
+                extent,
+            },
+            clear_value_count: 2,
+            clear_values: clear.as_ptr(),
+        };
+        unsafe {
+            begin(command_buffer, &info, VK_SUBPASS_CONTENTS_INLINE);
+            bind_pipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            bind_sets(
+                command_buffer,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                pipeline_layout,
+                0,
+                1,
+                &descriptor_set,
+                0,
+                core::ptr::null(),
+            );
+            let viewport = [extent.width as f32, extent.height as f32];
+            push_constants(
+                command_buffer,
+                pipeline_layout,
+                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                0,
+                core::mem::size_of_val(&viewport) as u32,
+                viewport.as_ptr().cast(),
+            );
+            for command in draw_commands {
+                draw(
+                    command_buffer,
+                    command.vertex_count,
+                    command.instance_count,
+                    command.first_vertex,
+                    command.first_instance,
+                );
+            }
+            end(command_buffer);
+        }
+        Ok(())
+    }
+
+    /// Records the first real opaque 3D world pass.  The vertex shader owns
+    /// the cube mesh for the bring-up path and reads bounded instance records
+    /// from the storage buffer; later phases replace this with mesh tables and
+    /// indirect command generation without changing the frame boundary.
+    ///
+    /// # Safety
+    ///
+    /// The caller must provide live, compatible Vulkan handles and a valid
+    /// loader dispatch table. The referenced device resources must remain
+    /// alive until command recording is complete.
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn cmd_world_draw(
+        &self,
+        loader: &VulkanLoader,
+        command_buffer: VkCommandBuffer,
+        render_pass: VkRenderPass,
+        framebuffer: u64,
+        pipeline: VkPipeline,
+        pipeline_layout: VkPipelineLayout,
+        descriptor_set: VkDescriptorSet,
+        extent: Extent2D,
+        clear_color: [f32; 4],
+        view_projection: [f32; 16],
+        draw_commands: &[crate::subsystems::renderer::WorldDrawCommand],
+    ) -> Result<(), VulkanLoaderError> {
+        if command_buffer.is_null()
+            || render_pass == 0
+            || framebuffer == 0
+            || pipeline == 0
+            || pipeline_layout == 0
+            || descriptor_set == 0
+            || extent.width == 0
+            || extent.height == 0
+            || draw_commands.is_empty()
+        {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        if draw_commands.iter().any(|command| {
+            command.vertex_count == 0
+                || command.instance_count == 0
+                || command
+                    .first_vertex
+                    .checked_add(command.vertex_count)
+                    .is_none_or(|end| end > 36)
+        }) {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let begin: VkCmdBeginRenderPass =
+            loader.device_command(self.handle, b"vkCmdBeginRenderPass\0")?;
+        let end: VkCmdEndRenderPass =
+            loader.device_command(self.handle, b"vkCmdEndRenderPass\0")?;
+        let bind_pipeline: VkCmdBindPipeline =
+            loader.device_command(self.handle, b"vkCmdBindPipeline\0")?;
+        let bind_sets: VkCmdBindDescriptorSets =
+            loader.device_command(self.handle, b"vkCmdBindDescriptorSets\0")?;
+        let push_constants: VkCmdPushConstants =
+            loader.device_command(self.handle, b"vkCmdPushConstants\0")?;
+        let draw: VkCmdDraw = loader.device_command(self.handle, b"vkCmdDraw\0")?;
+        let clear = [
+            ClearValue { color: clear_color },
+            ClearValue {
+                color: [1.0, 0.0, 0.0, 0.0],
+            },
+        ];
+        let info = RenderPassBeginInfo {
+            s_type: VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            next: core::ptr::null(),
+            render_pass,
+            framebuffer,
+            render_area: Rect2D {
+                offset: [0, 0],
+                extent,
+            },
+            clear_value_count: 2,
+            clear_values: clear.as_ptr(),
+        };
+        unsafe {
+            begin(command_buffer, &info, VK_SUBPASS_CONTENTS_INLINE);
+            bind_pipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            bind_sets(
+                command_buffer,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                pipeline_layout,
+                0,
+                1,
+                &descriptor_set,
+                0,
+                core::ptr::null(),
+            );
+            push_constants(
+                command_buffer,
+                pipeline_layout,
+                VK_SHADER_STAGE_VERTEX_BIT,
+                0,
+                core::mem::size_of_val(&view_projection) as u32,
+                view_projection.as_ptr().cast(),
+            );
+            for command in draw_commands {
+                draw(
+                    command_buffer,
+                    command.vertex_count,
+                    command.instance_count,
+                    command.first_vertex,
+                    command.first_instance,
+                );
+            }
+            end(command_buffer);
+        }
+        Ok(())
+    }
+
+    /// Creates a 2D color view for one swapchain image.
+    ///
+    /// # Safety
+    ///
+    /// The caller must provide a live image belonging to this device and keep
+    /// it alive until the returned image view is dropped.
+    pub unsafe fn create_color_image_view(
+        &self,
+        loader: &VulkanLoader,
+        image: VkImage,
+        format: u32,
+    ) -> Result<NativeImageView, VulkanLoaderError> {
+        if image == 0 || format == VK_FORMAT_UNDEFINED {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let create: VkCreateImageView =
+            loader.device_command(self.handle, b"vkCreateImageView\0")?;
+        let destroy: VkDestroyImageView =
+            loader.device_command(self.handle, b"vkDestroyImageView\0")?;
+        let info = ImageViewCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            image,
+            view_type: VK_IMAGE_VIEW_TYPE_2D,
+            format,
+            components: ComponentMapping {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+            subresource_range: ImageSubresourceRange {
+                aspect_mask: VK_IMAGE_ASPECT_COLOR_BIT,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            },
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        Ok(NativeImageView {
+            handle,
+            device: self.handle,
+            destroy,
+        })
+    }
+
+    /// # Safety
+    ///
+    /// The caller must provide a live physical device compatible with this
+    /// logical device and keep the loader/device alive for the operation.
+    pub unsafe fn create_depth_image(
+        &self,
+        loader: &VulkanLoader,
+        physical: VkPhysicalDevice,
+        extent: Extent2D,
+    ) -> Result<NativeDepthImage, VulkanLoaderError> {
+        if physical.is_null() || extent.width == 0 || extent.height == 0 {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let create: VkCreateImage = loader.device_command(self.handle, b"vkCreateImage\0")?;
+        let destroy_image: VkDestroyImage =
+            loader.device_command(self.handle, b"vkDestroyImage\0")?;
+        let requirements: VkGetImageMemoryRequirements =
+            loader.device_command(self.handle, b"vkGetImageMemoryRequirements\0")?;
+        let allocate: VkAllocateMemory =
+            loader.device_command(self.handle, b"vkAllocateMemory\0")?;
+        let free_memory: VkFreeMemory = loader.device_command(self.handle, b"vkFreeMemory\0")?;
+        let bind: VkBindImageMemory = loader.device_command(self.handle, b"vkBindImageMemory\0")?;
+        let info = ImageCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            image_type: VK_IMAGE_TYPE_2D,
+            format: VK_FORMAT_D32_SFLOAT,
+            extent: Extent3D {
+                width: extent.width,
+                height: extent.height,
+                depth: 1,
+            },
+            mip_levels: 1,
+            array_layers: 1,
+            samples: VK_SAMPLE_COUNT_1_BIT,
+            tiling: 0,
+            usage: VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+            sharing_mode: VK_SHARING_MODE_EXCLUSIVE,
+            queue_family_index_count: 0,
+            queue_family_indices: core::ptr::null(),
+            initial_layout: VK_IMAGE_LAYOUT_UNDEFINED,
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        let mut requirements_out = MemoryRequirements {
+            size: 0,
+            alignment: 0,
+            memory_type_bits: 0,
+        };
+        unsafe { requirements(self.handle, handle, &mut requirements_out) };
+        let get_memory_properties: VkGetPhysicalDeviceMemoryProperties =
+            loader.command(b"vkGetPhysicalDeviceMemoryProperties\0")?;
+        let mut properties = PhysicalDeviceMemoryProperties {
+            memory_type_count: 0,
+            memory_types: [MemoryType {
+                property_flags: 0,
+                heap_index: 0,
+            }; 32],
+            memory_heap_count: 0,
+            memory_heaps: [MemoryHeap {
+                size: 0,
+                flags: 0,
+                _padding: 0,
+            }; 16],
+        };
+        unsafe { get_memory_properties(physical, &mut properties) };
+        let Some(type_index) = select_memory_type(
+            &properties,
+            requirements_out.memory_type_bits,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            0,
+        ) else {
+            unsafe { destroy_image(self.handle, handle, core::ptr::null()) };
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        };
+        let allocation_info = MemoryAllocateInfo {
+            s_type: 5,
+            next: core::ptr::null(),
+            allocation_size: requirements_out.size,
+            memory_type_index: type_index,
+        };
+        let mut memory = 0;
+        let result = unsafe {
+            allocate(
+                self.handle,
+                &allocation_info,
+                core::ptr::null(),
+                &mut memory,
+            )
+        };
+        if result != VK_SUCCESS || memory == 0 {
+            unsafe { destroy_image(self.handle, handle, core::ptr::null()) };
+            return Err(VulkanLoaderError::Api(result));
+        }
+        let result = unsafe { bind(self.handle, handle, memory, 0) };
+        if result != VK_SUCCESS {
+            unsafe {
+                free_memory(self.handle, memory, core::ptr::null());
+                destroy_image(self.handle, handle, core::ptr::null());
+            }
+            return Err(VulkanLoaderError::Api(result));
+        }
+        Ok(NativeDepthImage {
+            handle,
+            memory,
+            device: self.handle,
+            destroy_image,
+            free_memory,
+        })
+    }
+
+    /// # Safety
+    ///
+    /// The caller must provide a live image created for this device and keep
+    /// the loader/device alive while the image view is created.
+    pub unsafe fn create_depth_image_view(
+        &self,
+        loader: &VulkanLoader,
+        image: VkImage,
+    ) -> Result<NativeImageView, VulkanLoaderError> {
+        if image == 0 {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let create: VkCreateImageView =
+            loader.device_command(self.handle, b"vkCreateImageView\0")?;
+        let destroy: VkDestroyImageView =
+            loader.device_command(self.handle, b"vkDestroyImageView\0")?;
+        let info = ImageViewCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            image,
+            view_type: VK_IMAGE_VIEW_TYPE_2D,
+            format: VK_FORMAT_D32_SFLOAT,
+            components: ComponentMapping {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+            subresource_range: ImageSubresourceRange {
+                aspect_mask: VK_IMAGE_ASPECT_DEPTH_BIT,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            },
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        Ok(NativeImageView {
+            handle,
+            device: self.handle,
+            destroy,
+        })
+    }
+
+    /// Creates the single-subpass color render pass used by the UI lane.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the loader and logical device are live for the
+    /// duration of the Vulkan call and subsequent owned-resource lifetime.
+    pub unsafe fn create_ui_render_pass(
+        &self,
+        loader: &VulkanLoader,
+        color_format: u32,
+        depth_format: u32,
+    ) -> Result<NativeRenderPass, VulkanLoaderError> {
+        if color_format == VK_FORMAT_UNDEFINED || depth_format == VK_FORMAT_UNDEFINED {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let create: VkCreateRenderPass =
+            loader.device_command(self.handle, b"vkCreateRenderPass\0")?;
+        let destroy: VkDestroyRenderPass =
+            loader.device_command(self.handle, b"vkDestroyRenderPass\0")?;
+        let color_attachment = AttachmentDescription {
+            flags: 0,
+            format: color_format,
+            samples: VK_SAMPLE_COUNT_1_BIT,
+            load_op: VK_ATTACHMENT_LOAD_OP_CLEAR,
+            store_op: VK_ATTACHMENT_STORE_OP_STORE,
+            stencil_load_op: VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            stencil_store_op: VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            initial_layout: VK_IMAGE_LAYOUT_UNDEFINED,
+            final_layout: VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        };
+        let depth_attachment = AttachmentDescription {
+            flags: 0,
+            format: depth_format,
+            samples: VK_SAMPLE_COUNT_1_BIT,
+            load_op: VK_ATTACHMENT_LOAD_OP_CLEAR,
+            store_op: VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            stencil_load_op: VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            stencil_store_op: VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            initial_layout: VK_IMAGE_LAYOUT_UNDEFINED,
+            final_layout: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        };
+        let color_reference = AttachmentReference {
+            attachment: 0,
+            layout: VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        };
+        let depth_reference = AttachmentReference {
+            attachment: 1,
+            layout: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        };
+        let attachments = [color_attachment, depth_attachment];
+        let subpass = SubpassDescription {
+            flags: 0,
+            pipeline_bind_point: VK_PIPELINE_BIND_POINT_GRAPHICS,
+            input_attachment_count: 0,
+            input_attachments: core::ptr::null(),
+            color_attachment_count: 1,
+            color_attachments: &color_reference,
+            resolve_attachments: core::ptr::null(),
+            depth_stencil_attachment: (&depth_reference as *const AttachmentReference).cast(),
+            preserve_attachment_count: 0,
+            preserve_attachments: core::ptr::null(),
+        };
+        let info = RenderPassCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            attachment_count: 2,
+            attachments: attachments.as_ptr(),
+            subpass_count: 1,
+            subpasses: &subpass,
+            dependency_count: 0,
+            dependencies: core::ptr::null(),
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        Ok(NativeRenderPass {
+            handle,
+            device: self.handle,
+            destroy,
+        })
+    }
+
+    /// Creates one framebuffer for a color view and the UI render pass.
+    ///
+    /// # Safety
+    ///
+    /// The caller must provide live, compatible render-pass and image-view
+    /// handles belonging to this device and keep them alive until the returned
+    /// framebuffer is dropped.
+    pub unsafe fn create_framebuffer(
+        &self,
+        loader: &VulkanLoader,
+        render_pass: VkRenderPass,
+        image_view: VkImageView,
+        depth_view: VkImageView,
+        extent: Extent2D,
+    ) -> Result<NativeFramebuffer, VulkanLoaderError> {
+        if render_pass == 0
+            || image_view == 0
+            || depth_view == 0
+            || extent.width == 0
+            || extent.height == 0
+        {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let create: VkCreateFramebuffer =
+            loader.device_command(self.handle, b"vkCreateFramebuffer\0")?;
+        let destroy: VkDestroyFramebuffer =
+            loader.device_command(self.handle, b"vkDestroyFramebuffer\0")?;
+        let attachments = [image_view, depth_view];
+        let info = FramebufferCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            render_pass,
+            attachment_count: 2,
+            attachments: attachments.as_ptr(),
+            width: extent.width,
+            height: extent.height,
+            layers: 1,
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        Ok(NativeFramebuffer {
+            handle,
+            device: self.handle,
+            destroy,
+        })
+    }
+
+    /// Builds the fixed-function UI pipeline for the validated SPIR-V pair.
+    /// The UI shader uses no vertex attributes; item data is read from the
+    /// descriptor-backed storage buffer and expanded into instanced quads.
+    ///
+    /// # Safety
+    ///
+    /// The caller must provide live, compatible shader modules, pipeline
+    /// layout, render pass, and logical device handles, and keep those parent
+    /// resources alive until the returned pipeline is dropped.
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn create_ui_graphics_pipeline(
+        &self,
+        loader: &VulkanLoader,
+        vertex_shader: VkShaderModule,
+        fragment_shader: VkShaderModule,
+        pipeline_layout: VkPipelineLayout,
+        render_pass: VkRenderPass,
+        extent: Extent2D,
+        depth_enabled: bool,
+    ) -> Result<NativeGraphicsPipeline, VulkanLoaderError> {
+        if vertex_shader == 0
+            || fragment_shader == 0
+            || pipeline_layout == 0
+            || render_pass == 0
+            || extent.width == 0
+            || extent.height == 0
+        {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let create: VkCreateGraphicsPipelines =
+            loader.device_command(self.handle, b"vkCreateGraphicsPipelines\0")?;
+        let destroy: VkDestroyPipeline =
+            loader.device_command(self.handle, b"vkDestroyPipeline\0")?;
+        let entry = b"main\0";
+        let stages = [
+            PipelineShaderStageCreateInfo {
+                s_type: VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                next: core::ptr::null(),
+                flags: 0,
+                stage: VK_SHADER_STAGE_VERTEX_BIT,
+                module: vertex_shader,
+                name: entry.as_ptr(),
+                specialization_info: core::ptr::null(),
+            },
+            PipelineShaderStageCreateInfo {
+                s_type: VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                next: core::ptr::null(),
+                flags: 0,
+                stage: VK_SHADER_STAGE_FRAGMENT_BIT,
+                module: fragment_shader,
+                name: entry.as_ptr(),
+                specialization_info: core::ptr::null(),
+            },
+        ];
+        let vertex_input = PipelineVertexInputStateCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            vertex_binding_description_count: 0,
+            vertex_binding_descriptions: core::ptr::null(),
+            vertex_attribute_description_count: 0,
+            vertex_attribute_descriptions: core::ptr::null(),
+        };
+        let assembly = PipelineInputAssemblyStateCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            topology: VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+            primitive_restart_enable: 0,
+        };
+        let viewport = Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: extent.width as f32,
+            height: extent.height as f32,
+            min_depth: 0.0,
+            max_depth: 1.0,
+        };
+        let scissor = Rect2D {
+            offset: [0, 0],
+            extent,
+        };
+        let viewport_state = PipelineViewportStateCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            viewport_count: 1,
+            viewports: &viewport,
+            scissor_count: 1,
+            scissors: &scissor,
+        };
+        let rasterization = PipelineRasterizationStateCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            depth_clamp_enable: 0,
+            rasterizer_discard_enable: 0,
+            polygon_mode: VK_POLYGON_MODE_FILL,
+            cull_mode: 0,
+            front_face: 0,
+            depth_bias_enable: 0,
+            depth_bias_constant_factor: 0.0,
+            depth_bias_clamp: 0.0,
+            depth_bias_slope_factor: 0.0,
+            line_width: 1.0,
+        };
+        let multisample = PipelineMultisampleStateCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            rasterization_samples: VK_SAMPLE_COUNT_1_BIT,
+            sample_shading_enable: 0,
+            min_sample_shading: 0.0,
+            sample_mask: core::ptr::null(),
+            alpha_to_coverage_enable: 0,
+            alpha_to_one_enable: 0,
+        };
+        let stencil = StencilOpState {
+            fail_op: 0,
+            pass_op: 0,
+            depth_fail_op: 0,
+            compare_op: 0,
+            compare_mask: 0,
+            write_mask: 0,
+            reference: 0,
+        };
+        let depth_stencil = PipelineDepthStencilStateCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            depth_test_enable: u32::from(depth_enabled),
+            depth_write_enable: u32::from(depth_enabled),
+            depth_compare_op: VK_COMPARE_OP_LESS,
+            depth_bounds_test_enable: 0,
+            stencil_test_enable: 0,
+            front: stencil,
+            back: stencil,
+            min_depth_bounds: 0.0,
+            max_depth_bounds: 1.0,
+        };
+        let blend_attachment = PipelineColorBlendAttachmentState {
+            blend_enable: 1,
+            src_color_blend_factor: VK_BLEND_FACTOR_SRC_ALPHA,
+            dst_color_blend_factor: VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+            color_blend_op: VK_BLEND_OP_ADD,
+            src_alpha_blend_factor: VK_BLEND_FACTOR_ONE,
+            dst_alpha_blend_factor: VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+            alpha_blend_op: VK_BLEND_OP_ADD,
+            color_write_mask: VK_COLOR_COMPONENT_R_BIT
+                | VK_COLOR_COMPONENT_G_BIT
+                | VK_COLOR_COMPONENT_B_BIT
+                | VK_COLOR_COMPONENT_A_BIT,
+        };
+        let blend = PipelineColorBlendStateCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            logic_op_enable: 0,
+            logic_op: 0,
+            attachment_count: 1,
+            attachments: &blend_attachment,
+            blend_constants: [0.0; 4],
+        };
+        let info = GraphicsPipelineCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            stage_count: 2,
+            stages: stages.as_ptr(),
+            vertex_input_state: &vertex_input,
+            input_assembly_state: &assembly,
+            tessellation_state: core::ptr::null(),
+            viewport_state: &viewport_state,
+            rasterization_state: &rasterization,
+            multisample_state: &multisample,
+            depth_stencil_state: (&depth_stencil as *const PipelineDepthStencilStateCreateInfo)
+                .cast(),
+            color_blend_state: &blend,
+            dynamic_state: core::ptr::null(),
+            layout: pipeline_layout,
+            render_pass,
+            subpass: 0,
+            base_pipeline_handle: 0,
+            base_pipeline_index: -1,
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, 0, 1, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        Ok(NativeGraphicsPipeline {
+            handle,
+            device: self.handle,
+            destroy,
+        })
+    }
+
     pub fn queue(&self, family: u32, index: u32) -> Option<VkQueue> {
         let mut queue = core::ptr::null_mut();
         // SAFETY: device is live and Vulkan writes one queue handle.
         unsafe { (self.get_queue)(self.handle, family, index, &mut queue) };
         (!queue.is_null()).then_some(queue)
     }
+
+    /// Creates and binds one bounded Vulkan buffer allocation.
+    ///
+    /// # Safety
+    /// `physical` must be live and paired with this logical device. `size` and
+    /// `usage` must be non-zero and valid for the eventual Vulkan commands.
+    pub unsafe fn create_buffer(
+        &self,
+        loader: &VulkanLoader,
+        physical: VkPhysicalDevice,
+        size: u64,
+        usage: u32,
+        required_properties: u32,
+        preferred_properties: u32,
+    ) -> Result<NativeBuffer, VulkanLoaderError> {
+        if physical.is_null() || size == 0 || usage == 0 {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let create: VkCreateBuffer = loader.device_command(self.handle, b"vkCreateBuffer\0")?;
+        let destroy_buffer: VkDestroyBuffer =
+            loader.device_command(self.handle, b"vkDestroyBuffer\0")?;
+        let requirements: VkGetBufferMemoryRequirements =
+            loader.device_command(self.handle, b"vkGetBufferMemoryRequirements\0")?;
+        let allocate: VkAllocateMemory =
+            loader.device_command(self.handle, b"vkAllocateMemory\0")?;
+        let free_memory: VkFreeMemory = loader.device_command(self.handle, b"vkFreeMemory\0")?;
+        let bind: VkBindBufferMemory =
+            loader.device_command(self.handle, b"vkBindBufferMemory\0")?;
+        let info = BufferCreateInfo {
+            s_type: 12,
+            next: core::ptr::null(),
+            flags: 0,
+            size,
+            usage,
+            sharing_mode: VK_SHARING_MODE_EXCLUSIVE,
+            queue_family_index_count: 0,
+            queue_family_indices: core::ptr::null(),
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        let mut requirements_out = MemoryRequirements {
+            size: 0,
+            alignment: 0,
+            memory_type_bits: 0,
+        };
+        unsafe { requirements(self.handle, handle, &mut requirements_out) };
+        let get_memory_properties: VkGetPhysicalDeviceMemoryProperties =
+            loader.command(b"vkGetPhysicalDeviceMemoryProperties\0")?;
+        let mut properties = PhysicalDeviceMemoryProperties {
+            memory_type_count: 0,
+            memory_types: [MemoryType {
+                property_flags: 0,
+                heap_index: 0,
+            }; 32],
+            memory_heap_count: 0,
+            memory_heaps: [MemoryHeap {
+                size: 0,
+                flags: 0,
+                _padding: 0,
+            }; 16],
+        };
+        unsafe { get_memory_properties(physical, &mut properties) };
+        let Some(type_index) = select_memory_type(
+            &properties,
+            requirements_out.memory_type_bits,
+            required_properties,
+            preferred_properties,
+        ) else {
+            unsafe { destroy_buffer(self.handle, handle, core::ptr::null()) };
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        };
+        let allocation_info = MemoryAllocateInfo {
+            s_type: 5,
+            next: core::ptr::null(),
+            allocation_size: requirements_out.size,
+            memory_type_index: type_index,
+        };
+        let mut memory = 0;
+        let result = unsafe {
+            allocate(
+                self.handle,
+                &allocation_info,
+                core::ptr::null(),
+                &mut memory,
+            )
+        };
+        if result != VK_SUCCESS || memory == 0 {
+            unsafe { destroy_buffer(self.handle, handle, core::ptr::null()) };
+            return Err(VulkanLoaderError::Api(result));
+        }
+        let result = unsafe { bind(self.handle, handle, memory, 0) };
+        if result != VK_SUCCESS {
+            unsafe {
+                free_memory(self.handle, memory, core::ptr::null());
+                destroy_buffer(self.handle, handle, core::ptr::null());
+            }
+            return Err(VulkanLoaderError::Api(result));
+        }
+        let memory_properties = properties.memory_types[type_index as usize].property_flags;
+        Ok(NativeBuffer {
+            handle,
+            memory,
+            size,
+            device: self.handle,
+            destroy_buffer,
+            free_memory,
+            memory_properties,
+        })
+    }
+
     pub fn create_semaphore(
         &self,
         loader: &VulkanLoader,
@@ -718,6 +2982,7 @@ pub struct VulkanLoader {
     library: DynamicLibrary,
     get_instance_proc_addr: VkGetInstanceProcAddr,
     get_device_proc_addr: VkGetDeviceProcAddr,
+    active_instance: AtomicPtr<c_void>,
 }
 
 impl VulkanLoader {
@@ -738,6 +3003,7 @@ impl VulkanLoader {
             library,
             get_instance_proc_addr,
             get_device_proc_addr,
+            active_instance: AtomicPtr::new(core::ptr::null_mut()),
         })
     }
 
@@ -831,6 +3097,18 @@ impl VulkanLoader {
         (!pointer.is_null()).then_some(pointer)
     }
 
+    /// Resolves an instance-level command through a live Vulkan instance.
+    ///
+    /// # Safety
+    /// `instance` must be live and `name` must be NUL-terminated.
+    pub unsafe fn instance_proc(&self, instance: VkInstance, name: &[u8]) -> Option<*const c_void> {
+        if name.last().copied() != Some(0) || instance.is_null() {
+            return None;
+        }
+        let pointer = unsafe { (self.get_instance_proc_addr)(instance, name.as_ptr()) };
+        (!pointer.is_null()).then_some(pointer)
+    }
+
     /// Creates a persistent Vulkan instance with the given instance
     /// extensions (e.g. `VK_KHR_surface` + `VK_KHR_xlib_surface`). The
     /// instance is destroyed when dropped.
@@ -838,12 +3116,25 @@ impl VulkanLoader {
     /// # Safety
     /// Every extension name must be NUL-terminated and supported by the
     /// loader; extension lists must stay live for the synchronous call.
+    pub(crate) fn instance_command<T>(
+        &self,
+        instance: VkInstance,
+        name: &'static [u8],
+    ) -> Result<T, VulkanLoaderError> {
+        let pointer = unsafe { self.instance_proc(instance, name) }.ok_or_else(|| {
+            VulkanLoaderError::MissingEntry(DlError::Symbol {
+                lib: self.library_name().to_owned(),
+                name: String::from_utf8_lossy(name).into_owned(),
+            })
+        })?;
+        Ok(unsafe { core::mem::transmute_copy(&pointer) })
+    }
+
     pub fn create_instance(
         &self,
         extensions: &[&[u8]],
     ) -> Result<NativeInstance, VulkanLoaderError> {
         let create: VkCreateInstance = self.command(b"vkCreateInstance\0")?;
-        let destroy: VkDestroyInstance = self.command(b"vkDestroyInstance\0")?;
         let names: Vec<*const u8> = extensions.iter().map(|name| name.as_ptr()).collect();
         let app_name = b"rust-kernel-game-engine-kit\0";
         let engine_name = b"rust-kernel-game-engine-kit\0";
@@ -872,6 +3163,8 @@ impl VulkanLoader {
         if result != VK_SUCCESS {
             return Err(VulkanLoaderError::Api(result));
         }
+        self.active_instance.store(instance, Ordering::Release);
+        let destroy: VkDestroyInstance = self.instance_command(instance, b"vkDestroyInstance\0")?;
         Ok(NativeInstance { instance, destroy })
     }
 
@@ -959,12 +3252,55 @@ impl VulkanLoader {
 
     pub(crate) fn command<T>(&self, name: &'static [u8]) -> Result<T, VulkanLoaderError> {
         // SAFETY: static command names are NUL-terminated.
-        let pointer = unsafe { self.global_proc(name) }.ok_or_else(|| {
+        let instance = self.active_instance.load(Ordering::Acquire);
+        let pointer = unsafe { self.instance_proc(instance, name) }
+            .or_else(|| unsafe { self.global_proc(name) })
+            .ok_or_else(|| {
+                VulkanLoaderError::MissingCommand(String::from_utf8_lossy(name).into_owned())
+            })?;
+        // SAFETY: T matches the Vulkan command ABI at each call site.
+        Ok(unsafe { core::mem::transmute_copy(&pointer) })
+    }
+
+    pub(crate) fn device_command<T>(
+        &self,
+        device: VkDevice,
+        name: &'static [u8],
+    ) -> Result<T, VulkanLoaderError> {
+        // SAFETY: static command names are NUL-terminated and the caller
+        // supplies the live device whose dispatch table owns the command.
+        let pointer = unsafe { self.device_proc(device, name) }.ok_or_else(|| {
             VulkanLoaderError::MissingCommand(String::from_utf8_lossy(name).into_owned())
         })?;
         // SAFETY: T matches the Vulkan command ABI at each call site.
         Ok(unsafe { core::mem::transmute_copy(&pointer) })
     }
+}
+
+fn select_memory_type(
+    properties: &PhysicalDeviceMemoryProperties,
+    compatible_bits: u32,
+    required: u32,
+    preferred: u32,
+) -> Option<u32> {
+    let count = (properties.memory_type_count as usize).min(properties.memory_types.len());
+    let mut best = None;
+    let mut best_score = 0_u32;
+    for index in 0..count {
+        if compatible_bits & (1_u32 << index) == 0 {
+            continue;
+        }
+        let flags = properties.memory_types[index].property_flags;
+        if flags & required != required {
+            continue;
+        }
+        let score = (flags & preferred).count_ones();
+        if best.is_none() || score > best_score {
+            best = Some(index as u32);
+            best_score = score;
+        }
+    }
+    best
 }
 
 /// # Safety
@@ -1035,6 +3371,7 @@ fn enumerate_queue_families(
         QueueFamilyProperties {
             flags: 0,
             queue_count: 0,
+            timestamp_valid_bits: 0,
             min_image_transfer_granularity: [0; 3]
         };
         count as usize
@@ -1071,5 +3408,12 @@ mod tests {
     fn version_constant_is_abi_correct() {
         assert_eq!(VK_SUCCESS, 0);
         assert_eq!(VK_API_VERSION_1_0, 0x0040_0000);
+    }
+
+    #[test]
+    fn physical_device_output_layout_matches_vulkan() {
+        assert_eq!(core::mem::size_of::<PhysicalDeviceProperties>(), 824);
+        assert_eq!(core::mem::align_of::<PhysicalDeviceProperties>(), 8);
+        assert_eq!(core::mem::size_of::<QueueFamilyProperties>(), 24);
     }
 }

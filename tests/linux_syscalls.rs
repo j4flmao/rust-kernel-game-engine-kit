@@ -3,8 +3,10 @@
 
 #[cfg(target_os = "linux")]
 mod linux_only {
+    use std::fs;
     use std::io::Write;
 
+    use rust_kernel_game_engine_kit::platform::linux::io_uring::IoUring;
     use rust_kernel_game_engine_kit::platform::linux::syscalls::{
         read_file, Fd, MappedFile, O_CLOEXEC, O_RDONLY,
     };
@@ -55,5 +57,29 @@ mod linux_only {
     fn missing_file_surfaces_errno_not_panic() {
         let err = read_file("/definitely/not/a/real/path").unwrap_err();
         assert!(err.to_string().contains("open"));
+    }
+
+    #[test]
+    fn io_uring_reads_owned_buffer_to_completion() {
+        let path = temp_path("uring");
+        let payload = b"io_uring-end-to-end\0payload";
+        fs::File::create(&path).unwrap().write_all(payload).unwrap();
+        let fd = Fd::open(&path, O_RDONLY | O_CLOEXEC, 0).unwrap();
+        let mut ring = IoUring::new(8).expect("Linux CI must expose io_uring");
+
+        let request = ring
+            .submit_read(fd.raw_fd(), vec![0; payload.len()], 0, 0xfeed)
+            .unwrap();
+        ring.enter(1, 1).unwrap();
+        let mut completed = None;
+        for _ in 0..8 {
+            if ring.try_complete().is_some() {
+                completed = Some(ring.take_completed(request.user_data()).unwrap());
+                break;
+            }
+        }
+        assert_eq!(completed.as_deref(), Some(payload.as_slice()));
+        drop(fd);
+        let _ = fs::remove_file(path);
     }
 }

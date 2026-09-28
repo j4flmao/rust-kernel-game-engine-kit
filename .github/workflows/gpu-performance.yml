@@ -1,6 +1,8 @@
 name: GPU quality milestone
 
 on:
+  push:
+    branches: ["**"]
   workflow_dispatch:
     inputs:
       runner_label:
@@ -26,10 +28,9 @@ concurrency:
 jobs:
   rubik-gpu:
     name: Rubik GPU runtime
-    # This is intentionally dispatch-only. A repository must first configure
-    # a runner with the label supplied above; otherwise the job would remain
-    # queued and block ordinary CI.
-    runs-on: ${{ inputs.runner_label }}
+    # Every branch push uses the configured GPU runner. Manual runs can select
+    # a different runner label through workflow_dispatch.
+    runs-on: ${{ inputs.runner_label || vars.GPU_RUNNER_LABEL || 'gpu-windows' }}
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -75,7 +76,7 @@ jobs:
       - name: Run bounded Rubik GPU workload
         shell: pwsh
         env:
-          RKE_RUBIK_MAX_FRAMES: ${{ inputs.frames }}
+          RKE_RUBIK_MAX_FRAMES: ${{ inputs.frames || '600' }}
         run: |
           New-Item -ItemType Directory -Force -Path gpu-artifacts | Out-Null
           cargo run --locked --release --example rubik_3d --all-features 2>&1 |

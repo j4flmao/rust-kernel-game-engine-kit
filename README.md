@@ -60,6 +60,7 @@ The project follows this priority order:
 - `kernel_nostd/` is a minimal `no_std`/`wasm32` track with a bounded bump allocator, fallible allocation, and panic handler.
 - `fuzz/` contains a libFuzzer target named `scheduler_input`.
 - `benches/kernel.rs` uses Criterion with HTML reports for allocator, ring, message bus, ECS, sync wire/HMAC, and dependency-wave workloads. The runtime parallel executor remains covered by tests because repeated benchmark-time synchronization is not a stable measurement boundary on every host.
+- `benches/quality_milestones/` is a separate Criterion suite for the rendering/runtime quality milestone. It reports multiple matrices, not only the 18M-object baseline: object scale (1M/4M/9M/18M), partition scale (1/4/16/64/256/1024 partitions at 18M), and cadence targets (60/120 FPS at 18M and 64 partitions). The harness accepts larger `u64` object counts for deeper local experiments, subject to overflow and partition validation.
 
 ## Repository layout
 
@@ -71,7 +72,9 @@ src/
   lib.rs               Library entry point
   main.rs              Composition root/demo executable
 tests/                 Integration and property-oriented tests
-benches/               Dependency-free benchmark harness
+benches/
+  kernel.rs             Kernel Criterion benchmarks and report
+  quality_milestones/   Separate Criterion quality-milestone harness and report
 fuzz/                  Separate cargo-fuzz package
 kernel_nostd/          Optional no_std wasm32 track
 .github/workflows/     Format, test, clippy, audit, fuzz, Miri, and ASan CI
@@ -140,13 +143,61 @@ For the ASan command, use nightly and set `RUSTFLAGS=-Zsanitizer=address`. The w
 
 ### HTML benchmark reports
 
-Run the benchmark suite with a shorter local configuration:
+The project keeps kernel benchmarks and quality-milestone benchmarks in separate
+Criterion output directories. This keeps the reports comparable and prevents a
+milestone run from changing the kernel report.
+
+#### Kernel report
 
 ```bash
 cargo bench --bench kernel -- --sample-size 10 --warm-up-time 1 --measurement-time 1
 ```
 
-Criterion writes the index report to `target/criterion/report/index.html` and per-group reports below `target/criterion/`. The CI `property-and-bench` job uploads the complete `target/criterion/` directory as the `kernel-benchmark-report` artifact.
+Criterion writes the kernel index report to
+`target/criterion/report/index.html` and per-group reports below
+`target/criterion/`. The CI `property-and-bench` job uploads the complete
+`target/criterion/` directory as the `kernel-benchmark-report` artifact.
+
+#### Quality-milestone report
+
+Run the milestone suite with its own target directory:
+
+```bash
+export CARGO_TARGET_DIR=target/criterion-milestone
+cargo bench --bench performance_milestone
+```
+
+On PowerShell:
+
+```powershell
+$env:CARGO_TARGET_DIR = "target/criterion-milestone"
+cargo bench --bench performance_milestone
+```
+
+The milestone report is written to
+`target/criterion-milestone/criterion/report/index.html`. The report contains
+12 benchmark cases across these groups:
+
+- `quality_milestone/object_scale`: 1M, 4M, 9M, and 18M objects at 60 FPS.
+- `quality_milestone/partition_scale`: 18M objects split across 1, 4, 16,
+  64, 256, and 1024 partitions at 60 FPS.
+- `quality_milestone/cadence_targets`: 18M objects and 64 partitions at both
+  60 FPS and 120 FPS.
+
+The 18M value is the published baseline, not a hard ceiling. The benchmark
+harness can be configured for larger object counts in local experiments and
+rejects invalid partition, FPS, and arithmetic-overflow configurations before
+the hot loop. The 60 FPS budget is about 16.667 ms per frame; 120 FPS is about
+8.333 ms. These workloads currently measure deterministic CPU-side preparation
+and partition coverage, so the HTML report is a performance signal rather than
+a claim that every GPU/driver can sustain the target.
+
+The `quality-milestone` workflow uploads the complete milestone report as the
+`quality-milestone-criterion-report` artifact. It intentionally runs without
+Criterion's `--noplot` flag so that the HTML report and its plots are retained.
+It runs for relevant pull requests, pushes to `main`, and can also be started
+manually with the Actions `workflow_dispatch` button. It has no scheduled cron
+run.
 
 ## Native I/O safety notes
 

@@ -25,6 +25,8 @@ const WM_NCCREATE: u32 = 0x0081;
 const WM_MOUSEMOVE: u32 = 0x0200;
 const WM_LBUTTONDOWN: u32 = 0x0201;
 const WM_LBUTTONUP: u32 = 0x0202;
+const WM_RBUTTONDOWN: u32 = 0x0204;
+const WM_RBUTTONUP: u32 = 0x0205;
 const WM_SIZE: u32 = 0x0005;
 const WM_CLOSE: u32 = 0x0010;
 const IDC_ARROW: *const u8 = 32512usize as *const u8;
@@ -83,6 +85,7 @@ extern "system" {
     fn GetLastError() -> u32;
     fn GetDC(window: Handle) -> Handle;
     fn ReleaseDC(window: Handle, dc: Handle) -> i32;
+    fn GetClientRect(window: Handle, rect: *mut Rect) -> i32;
     fn CreateSolidBrush(color: u32) -> Handle;
     fn DeleteObject(object: Handle) -> i32;
     fn FillRect(dc: Handle, rect: *const Rect, brush: Handle) -> i32;
@@ -215,6 +218,75 @@ impl Win32Window {
         let _ = unsafe { ShowWindow(self.handle, SW_SHOW) };
     }
 
+    /// Returns the drawable client area, excluding the title bar and borders.
+    ///
+    /// Vulkan swapchains are sized to this rectangle, not to the outer window
+    /// dimensions passed to `CreateWindowExA`.  Reading it after `ShowWindow`
+    /// also handles maximize/DPI adjustments made by the desktop compositor.
+    pub fn client_size(&self) -> Option<WindowSize> {
+        let mut rect = Rect {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        // SAFETY: the window owns a live HWND and rect points to writable
+        // storage for the duration of the call.
+        if unsafe { GetClientRect(self.handle, &mut rect) } == 0 {
+            return None;
+        }
+        WindowSize::new(
+            rect.right.saturating_sub(rect.left) as u32,
+            rect.bottom.saturating_sub(rect.top) as u32,
+        )
+    }
+
+    /// Paints a compact keyboard/mouse legend on top of the Rubik demo.
+    ///
+    /// The example uses the engine's native world pass for the cube.  This
+    /// small Win32 overlay keeps the controls discoverable without creating a
+    /// second app-specific renderer or introducing a UI dependency.
+    pub fn paint_rubik_help(&self, width: i32, height: i32) {
+        let dc = unsafe { GetDC(self.handle) };
+        if dc.is_null() || width < 32 || height < 32 {
+            return;
+        }
+        let panel_width = 330;
+        let panel_height = 230;
+        let right = width - 8;
+        let left = (right - panel_width).max(16).min(right - 1);
+        let top = 20;
+        unsafe {
+            SetBkMode(dc, 1);
+            let panel = CreateSolidBrush(0x00121724);
+            let rect = Rect {
+                left,
+                top,
+                right: (left + panel_width).min(right),
+                bottom: (top + panel_height).min(height - 8),
+            };
+            FillRect(dc, &rect, panel);
+            DeleteObject(panel);
+
+            SetTextColor(dc, 0x00ffffff);
+            draw_text(dc, left + 18, top + 16, "RUBIK 3D CONTROLS");
+            SetTextColor(dc, 0x00c9d4e8);
+            let lines = [
+                "Left drag: turn the selected layer",
+                "Right drag: orbit the whole cube",
+                "U D L R F B: face turns",
+                "M E S: slice turns",
+                "H: shuffle    Z/Y: undo/redo",
+                "T: solve history    N: reset",
+                "0: reset camera    Esc: quit",
+            ];
+            for (index, line) in lines.iter().enumerate() {
+                draw_text(dc, left + 18, top + 44 + index as i32 * 23, line);
+            }
+            let _ = ReleaseDC(self.handle, dc);
+        }
+    }
+
     /// Paints the example UI through the Win32 fallback backend. This keeps
     /// the example visibly interactive even when a machine has no usable
     /// Vulkan device/driver.
@@ -334,21 +406,30 @@ impl Win32Window {
                     key: message.w_param as u32,
                     pressed: message.message == WM_KEYDOWN,
                 }),
-                WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONUP => {
+                WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONUP | WM_RBUTTONDOWN | WM_RBUTTONUP => {
                     let x = (message.l_param as u32 & 0xffff) as i16 as i32;
                     let y = ((message.l_param as u32 >> 16) & 0xffff) as i16 as i32;
                     input_events.push(InputEvent::MouseMoved { x, y });
                     if message.message != WM_MOUSEMOVE {
                         input_events.push(InputEvent::MouseButton {
-                            button: 0,
-                            pressed: message.message == WM_LBUTTONDOWN,
+                            button: if matches!(message.message, WM_LBUTTONDOWN | WM_LBUTTONUP) {
+                                0
+                            } else {
+                                1
+                            },
+                            pressed: matches!(message.message, WM_LBUTTONDOWN | WM_RBUTTONDOWN),
                         });
                     }
                 }
-                WM_SIZE => window_events.push(WindowEvent::Resized(WindowSize {
-                    width: (message.l_param as u32 & 0xffff).max(1),
-                    height: ((message.l_param as u32 >> 16) & 0xffff).max(1),
-                })),
+                WM_SIZE => {
+                    let width = message.l_param as u32 & 0xffff;
+                    let height = (message.l_param as u32 >> 16) & 0xffff;
+                    // Minimize sends a zero-sized client area.  Do not
+                    // recreate a 1x1 swapchain; wait for the restore event.
+                    if let Some(size) = WindowSize::new(width, height) {
+                        window_events.push(WindowEvent::Resized(size));
+                    }
+                }
                 WM_CLOSE => window_events.push(WindowEvent::CloseRequested),
                 _ => {}
             }

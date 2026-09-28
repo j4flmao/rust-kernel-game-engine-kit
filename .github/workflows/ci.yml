@@ -86,9 +86,18 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c
+      - name: Reset Criterion report state
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf target/criterion target/criterion-regression
       - run: cargo test --test property_harness --all-features
       - run: cargo bench --bench kernel
       - name: Benchmark regression signal
+        env:
+          # Do not reuse Criterion's HTML/report state from the previous run.
+          # Two runs sharing target/criterion can race on base/sample.json.
+          CARGO_TARGET_DIR: target/criterion-regression
         run: cargo bench --bench kernel -- --noplot
       - name: Upload Criterion HTML report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

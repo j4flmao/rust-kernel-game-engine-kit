@@ -57,7 +57,7 @@ value of `0` exits immediately after initialization.
 The normal CI runners use CPU/software Vulkan. The real GPU workload is kept in
 `.github/workflows/gpu-performance.yml` and runs automatically on every branch
 push. Configure a GitHub-hosted larger GPU runner or a self-hosted Windows
-runner with the `gpu-windows` label; alternatively set the repository variable
+runner with the `area: gpu` label; alternatively set the repository variable
 `GPU_RUNNER_LABEL` to the exact runner label. Manual dispatch can override the
 label and frame count. The workflow records the adapter, runs the Criterion
 18M/60/120 CPU baseline on that host, builds the native Rubik example, runs the

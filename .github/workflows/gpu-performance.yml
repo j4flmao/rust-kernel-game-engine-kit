@@ -8,9 +8,9 @@ on:
       runner_label:
         description: >-
           Exact GPU runner label configured for this repository, for example
-          gpu-windows or the name of a GitHub larger GPU runner.
+          area: gpu or the name of a GitHub larger GPU runner.
         required: true
-        default: gpu-windows
+        default: "area: gpu"
         type: string
       frames:
         description: Number of Rubik frames to execute on the GPU runner
@@ -30,7 +30,7 @@ jobs:
     name: Rubik GPU runtime
     # Every branch push uses the configured GPU runner. Manual runs can select
     # a different runner label through workflow_dispatch.
-    runs-on: ${{ inputs.runner_label || vars.GPU_RUNNER_LABEL || 'gpu-windows' }}
+    runs-on: ${{ inputs.runner_label || vars.GPU_RUNNER_LABEL || 'area: gpu' }}
     timeout-minutes: 15
     steps:
       - name: Checkout

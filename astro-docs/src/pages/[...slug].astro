@@ -1,0 +1,9 @@
+---
+import Layout from '../layouts/Docs.astro';
+import { entries, loadDoc } from '../lib/docs.js';
+export function getStaticPaths() {
+  return [{ params: { slug: undefined }, props: { entry: entries[0] } }, ...entries.map(entry => ({ params: { slug: entry.slug }, props: { entry } }))];
+}
+const doc = await loadDoc(Astro.props.entry);
+---
+<Layout doc={doc} />

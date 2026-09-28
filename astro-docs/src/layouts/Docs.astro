@@ -1,0 +1,78 @@
+---
+import { entries, href } from '../lib/docs.js';
+import '../styles/docs.css';
+const { doc } = Astro.props;
+const groups = [...new Set(entries.map(e => e.group))];
+const index = entries.findIndex(e => e.slug === doc.slug);
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={`${doc.title} — rust-kernel-game-engine-kit engineering documentation.`} />
+    <title>{doc.title} · Rust Kernel Engine</title>
+    <link rel="icon" type="image/svg+xml" href={href().concat('favicon.svg')} />
+  </head>
+  <body>
+    <a class="skip" href="#content">Skip to content</a>
+    <header>
+      <a class="brand" href={href()}><span class="mark">K</span><span>RUST KERNEL<span class="subbrand">ENGINE DOCUMENTATION</span></span></a>
+      <div class="header-right"><span class="version">v0.1.0</span><a href="https://github.com/j4flmao/rust-kernel-game-engine-kit">GitHub ↗</a></div>
+    </header>
+    <div class="shell">
+      <aside class="sidebar">
+        <details class="navigation" open>
+          <summary>Documentation menu</summary>
+          <nav aria-label="Documentation">
+            {groups.map(group => <section><h2>{group}</h2>{entries.filter(e => e.group === group).map(e => <a href={href(e.slug)} aria-current={doc.slug === e.slug ? 'page' : undefined}>{e.title}</a>)}</section>)}
+          </nav>
+        </details>
+        <div class="sidebar-footer">Security. Stability. Speed.<br /><span>Microkernel-style game engine</span></div>
+      </aside>
+      <main id="content">
+        <div class="eyebrow">{doc.group}</div>
+        <h1>{doc.title}</h1>
+        {doc.reference && <aside class="source-note">Engineering reference · This page includes design targets. Check its status and acceptance criteria before treating a feature as implemented.</aside>}
+        <article class="prose" set:html={doc.html} />
+        <div class="source"><a href={doc.source}>View Markdown source ↗</a></div>
+        <nav class="pagination" aria-label="Adjacent pages">
+          {index > 0 ? <a href={href(entries[index - 1].slug)}><small>Previous</small>{entries[index - 1].title}</a> : <span />}
+          {index < entries.length - 1 && <a href={href(entries[index + 1].slug)}><small>Next</small>{entries[index + 1].title}</a>}
+        </nav>
+        <footer>Rust Kernel Engine Kit · Apache-2.0 · Built with Astro + Comark</footer>
+      </main>
+      <aside class="toc"><h2>On this page</h2><nav aria-label="Table of contents">{doc.headings.map(h => <a class:list={{ nested: h.depth === 3 }} href={`#${h.id}`}>{h.title}</a>)}</nav></aside>
+    </div>
+  </body>
+  <script>
+    async function renderDiagrams() {
+      const nodes = document.querySelectorAll<HTMLElement>('.mermaid');
+      if (!nodes.length) return;
+      try {
+        const { default: mermaid } = await import('mermaid');
+        mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'dark', fontFamily: 'Segoe UI, sans-serif' });
+        await mermaid.run({ nodes: Array.from(nodes) });
+      } catch (error) {
+        console.error('Diagram rendering failed', error);
+        nodes.forEach(node => {
+          const fallback = node.closest('figure')?.querySelector('details');
+          if (fallback) fallback.open = true;
+          node.textContent = 'Diagram unavailable; read the source below.';
+        });
+      }
+    }
+    void renderDiagrams();
+    document.querySelectorAll<HTMLButtonElement>('.copy-code').forEach(button => {
+      button.addEventListener('click', async () => {
+        const code = button.closest('.code-block')?.querySelector('code')?.textContent;
+        if (code === undefined || code === null) return;
+        try {
+          await navigator.clipboard.writeText(code);
+          button.textContent = 'Copied';
+        } catch { button.textContent = 'Select code to copy'; }
+        setTimeout(() => { button.textContent = 'Copy code'; }, 2000);
+      });
+    });
+  </script>
+</html>

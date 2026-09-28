@@ -1,0 +1,30 @@
+name: Astro documentation
+on:
+  pull_request:
+    paths: ['astro-docs/**', 'src/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/astro-docs.yml']
+  push:
+    branches: ['**']
+    paths: ['astro-docs/**', 'src/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/astro-docs.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  docs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      ASTRO_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+          cache: npm
+          cache-dependency-path: astro-docs/package-lock.json
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+      - run: npm ci
+        working-directory: astro-docs
+      - run: npm run check
+        working-directory: astro-docs

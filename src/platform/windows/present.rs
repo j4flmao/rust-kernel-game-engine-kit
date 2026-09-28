@@ -323,6 +323,127 @@ impl UiFrameTargets {
     }
 }
 
+#[allow(dead_code)]
+struct UiFrameTargets {
+    render_pass: NativeRenderPass,
+    image_views: Vec<NativeImageView>,
+    framebuffers: Vec<NativeFramebuffer>,
+}
+
+impl UiFrameTargets {
+    const fn render_pass(&self) -> VkRenderPass {
+        self.render_pass.raw()
+    }
+
+    fn framebuffer(&self, index: usize) -> Option<VkFramebuffer> {
+        self.framebuffers.get(index).map(NativeFramebuffer::raw)
+    }
+}
+
+struct UiNativePipeline {
+    pipeline: NativeGraphicsPipeline,
+    pipeline_layout: NativePipelineLayout,
+    descriptor_set: VkDescriptorSet,
+    _descriptor_pool: NativeDescriptorPool,
+    _descriptor_layout: NativeDescriptorSetLayout,
+    _fragment_shader: NativeShaderModule,
+    _vertex_shader: NativeShaderModule,
+}
+
+impl UiNativePipeline {
+    unsafe fn build(
+        loader: &VulkanLoader,
+        device: &LogicalDevice,
+        targets: &UiFrameTargets,
+        ui_buffer: VkBuffer,
+        extent: Extent2D,
+    ) -> Result<Option<Self>, PresentError> {
+        let vertex_words = crate::platform::ui_shaders::UI_VERTEX_SPIRV;
+        let fragment_words = crate::platform::ui_shaders::UI_FRAGMENT_SPIRV;
+        if vertex_words.is_empty() || fragment_words.is_empty() {
+            return Ok(None);
+        }
+        let vertex_shader = unsafe { device.create_shader_module(loader, vertex_words) }
+            .map_err(PresentError::Vulkan)?;
+        let fragment_shader = unsafe { device.create_shader_module(loader, fragment_words) }
+            .map_err(PresentError::Vulkan)?;
+        let descriptor_layout = unsafe { device.create_ui_descriptor_set_layout(loader) }
+            .map_err(PresentError::Vulkan)?;
+        let descriptor_pool =
+            unsafe { device.create_ui_descriptor_pool(loader) }.map_err(PresentError::Vulkan)?;
+        let descriptor_set = unsafe {
+            descriptor_pool.allocate_ui_set(
+                loader,
+                descriptor_layout.raw(),
+                ui_buffer,
+                UI_UPLOAD_CAPACITY,
+            )
+        }
+        .map_err(PresentError::Vulkan)?;
+        let pipeline_layout =
+            unsafe { device.create_ui_pipeline_layout(loader, descriptor_layout.raw()) }
+                .map_err(PresentError::Vulkan)?;
+        let pipeline = unsafe {
+            device.create_ui_graphics_pipeline(
+                loader,
+                vertex_shader.raw(),
+                fragment_shader.raw(),
+                pipeline_layout.raw(),
+                targets.render_pass(),
+                extent,
+            )
+        }
+        .map_err(PresentError::Vulkan)?;
+        Ok(Some(Self {
+            pipeline,
+            pipeline_layout,
+            descriptor_set,
+            _descriptor_pool: descriptor_pool,
+            _descriptor_layout: descriptor_layout,
+            _fragment_shader: fragment_shader,
+            _vertex_shader: vertex_shader,
+        }))
+    }
+}
+
+impl UiFrameTargets {
+    unsafe fn build(
+        loader: &VulkanLoader,
+        device: &LogicalDevice,
+        swapchain: &Swapchain,
+        format: SurfaceFormat,
+        extent: Extent2D,
+    ) -> Result<Self, PresentError> {
+        let render_pass = unsafe { device.create_ui_render_pass(loader, format.format) }
+            .map_err(PresentError::Vulkan)?;
+        let mut image_views = Vec::new();
+        image_views
+            .try_reserve_exact(swapchain.image_count())
+            .map_err(|_| PresentError::AllocationFailed)?;
+        for &image in swapchain.images() {
+            image_views.push(
+                unsafe { device.create_color_image_view(loader, image, format.format) }
+                    .map_err(PresentError::Vulkan)?,
+            );
+        }
+        let mut framebuffers = Vec::new();
+        framebuffers
+            .try_reserve_exact(image_views.len())
+            .map_err(|_| PresentError::AllocationFailed)?;
+        for view in &image_views {
+            framebuffers.push(
+                unsafe { device.create_framebuffer(loader, render_pass.raw(), view.raw(), extent) }
+                    .map_err(PresentError::Vulkan)?,
+            );
+        }
+        Ok(Self {
+            render_pass,
+            image_views,
+            framebuffers,
+        })
+    }
+}
+
 struct FrameState {
     _pool: NativeCommandPool,
     _command_buffers: Vec<VkCommandBuffer>,

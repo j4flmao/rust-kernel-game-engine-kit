@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { createMarkdownParser } from 'comark';
 import { renderHtmlFromDocument } from '@comark/html';
 import { codeToHtml, bundledLanguages } from 'shiki';
@@ -38,8 +37,16 @@ const parse = createMarkdownParser({ autoClose: false });
 export function href(slug = '') {
   return `${import.meta.env.BASE_URL.replace(/\/$/, '')}/${slug ? `${slug}/` : ''}`;
 }
+const markdownSources = import.meta.glob('../../docs/*.md', { query: '?raw', import: 'default', eager: true });
+
+export function docSource(entry) {
+  const source = markdownSources[`../../${entry.file}`];
+  if (typeof source !== 'string') throw new Error(`Missing documentation source: ${entry.file}`);
+  return source;
+}
+
 export async function loadDoc(entry) {
-  const source = await readFile(new URL(`../../${entry.file}`, import.meta.url), 'utf8');
+  const source = docSource(entry);
   const document = await parse(source);
   const headings = [];
   function visit(nodes) {

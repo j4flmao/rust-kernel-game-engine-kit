@@ -30,7 +30,7 @@ jobs:
     name: Rubik GPU runtime
     # Every branch push uses the configured GPU runner. Manual runs can select
     # a different runner label through workflow_dispatch.
-    runs-on: ${{ inputs.runner_label || vars.GPU_RUNNER_LABEL || 'area: gpu' }}
+    runs-on: "${{ inputs.runner_label || vars.GPU_RUNNER_LABEL || 'area: gpu' }}"
     timeout-minutes: 15
     steps:
       - name: Checkout

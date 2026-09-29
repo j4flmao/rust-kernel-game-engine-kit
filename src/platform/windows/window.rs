@@ -287,6 +287,45 @@ impl Win32Window {
         }
     }
 
+    /// Paints the controls for the standalone voxel/open-world example.
+    pub fn paint_voxel_help(&self, width: i32, height: i32) {
+        let dc = unsafe { GetDC(self.handle) };
+        if dc.is_null() || width < 32 || height < 32 {
+            return;
+        }
+        let panel_width = 330;
+        let panel_height = 190;
+        let right = width - 8;
+        let left = (right - panel_width).max(16).min(right - 1);
+        unsafe {
+            SetBkMode(dc, 1);
+            let panel = CreateSolidBrush(0x00121724);
+            let rect = Rect {
+                left,
+                top: 20,
+                right: (left + panel_width).min(right),
+                bottom: (20 + panel_height).min(height - 8),
+            };
+            FillRect(dc, &rect, panel);
+            DeleteObject(panel);
+            SetTextColor(dc, 0x00ffffff);
+            draw_text(dc, left + 18, 36, "VOXEL WORLD CONTROLS");
+            SetTextColor(dc, 0x00c9d4e8);
+            let lines = [
+                "WASD: move player",
+                "Space: jump",
+                "Mouse drag: orbit camera",
+                "H: regenerate terrain",
+                "N: reset player",
+                "Esc: quit",
+            ];
+            for (index, line) in lines.iter().enumerate() {
+                draw_text(dc, left + 18, 64 + index as i32 * 23, line);
+            }
+            let _ = ReleaseDC(self.handle, dc);
+        }
+    }
+
     /// Paints the example UI through the Win32 fallback backend. This keeps
     /// the example visibly interactive even when a machine has no usable
     /// Vulkan device/driver.

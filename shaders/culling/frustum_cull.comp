@@ -1,0 +1,35 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+struct Sphere {
+    vec4 center_radius;
+};
+
+layout(set = 0, binding = 0, std430) readonly buffer Bounds {
+    Sphere spheres[];
+};
+
+layout(set = 0, binding = 1, std140) uniform Frustum {
+    vec4 planes[6];
+};
+
+layout(set = 0, binding = 2, std430) writeonly buffer Visibility {
+    uint visible[];
+};
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= spheres.length()) {
+        return;
+    }
+    vec4 sphere = spheres[index].center_radius;
+    bool inside = true;
+    for (uint plane = 0u; plane < 6u; ++plane) {
+        if (dot(planes[plane].xyz, sphere.xyz) + planes[plane].w < -sphere.w) {
+            inside = false;
+            break;
+        }
+    }
+    visible[index] = inside ? 1u : 0u;
+}

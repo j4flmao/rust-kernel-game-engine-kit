@@ -52,9 +52,47 @@ cargo run --example rubik_3d --release
 Set `RKE_RUBIK_MAX_FRAMES` to a larger value for a longer manual GPU run. A
 value of `0` exits immediately after initialization.
 
+## `gpu_stress_3d`
+
+`gpu_stress_3d` is an interactive Minecraft-style voxel world. It generates a
+height-mapped block terrain, uploads every block as a mesh instance, and opens
+the native Vulkan presentation path on Windows. The scene is intentionally
+separate from the Rubik demo and is used to stress cube geometry, instance
+uploads, depth testing, player movement, camera movement, and frame pacing.
+
+Run it locally:
+
+```powershell
+$env:RKE_GPU_STRESS_BLOCKS = "16384"
+$env:RKE_GPU_STRESS_MAX_FRAMES = "600"
+cargo run --release --example gpu_stress_3d
+```
+
+Increase the terrain workload for a heavier render:
+
+```powershell
+$env:RKE_GPU_STRESS_BLOCKS = "100000"
+cargo run --release --features native-accel --example gpu_stress_3d
+```
+
+Controls:
+
+- left/right drag: orbit the world camera;
+- `H`: regenerate the stress scene;
+- `N`: reset the camera/state;
+- `Esc`: close the window.
+
+The example reports all six shader artifacts at startup. The graphics shaders
+(`world.vert`, `world.frag`, `ui.vert`, and `ui.frag`) are loaded by the native
+presentation path. The compute shaders (`culling/frustum_cull.comp` and
+`culling/build_indirect.comp`) are compiled and their Vulkan pipeline,
+descriptor, barrier, and indirect-draw contracts are available in both PALs;
+the current voxel presenter still uses the CPU extraction path until compute
+buffer lifetime is enabled in the frame owner.
+
 ### GPU validation
 
-GPU CI is intentionally disabled for now. The native Rubik example can still
-be run locally on a machine with a Vulkan driver. A dedicated GPU workflow will
-be added after a GPU server is available; it will then cover adapter discovery,
-native Vulkan presentation, GPU frame timing, and the 18M/60/120 milestones.
+GPU CI is intentionally disabled for now. Run the voxel example locally on a
+machine with a Vulkan driver. Linux and Windows both contain the native GPU
+pipeline contracts, but hardware presentation remains dependent on the local
+loader, driver, window system, and device.

@@ -14,6 +14,9 @@ categories = ["game-engines", "os"]
 default = []
 # Records contention counters (CAS-fail sites, thread ids) into the tracer.
 race_trace = []
+# Enables the optional batch transform accelerator on Unix targets. The safe
+# Rust implementation remains the default and is always available.
+native-accel = []
 
 [dependencies]
 hmac = "0.12"
@@ -46,6 +49,11 @@ harness = false
 name = "performance_milestone"
 harness = false
 path = "benches/quality_milestones/performance_milestone.rs"
+
+[[bench]]
+name = "native_accel"
+harness = false
+path = "benches/native_accel.rs"
 
 [lints.rust]
 unsafe_code = "warn"

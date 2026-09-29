@@ -1,6 +1,7 @@
 //! Example subsystems demonstrating the kernel contract end-to-end.
 
 pub mod audio;
+pub mod gpu_pipeline;
 pub mod hello;
 pub mod input;
 pub mod messages;

@@ -98,6 +98,25 @@ command models, exposes a stable `GpuInstanceRecord` upload layout, encodes the 
 backend is allowed to submit. GPU indirect generation must match this manifest before it
 can become the default.
 
+### Current native shader status
+
+The build compiles and reports six shader artifacts:
+
+```text
+ui.vert / ui.frag
+world.vert / world.frag
+culling/frustum_cull.comp
+culling/build_indirect.comp
+```
+
+The Linux and Windows PALs expose the same compute resource ABI and command
+ordering: descriptor set layout, descriptor pool/set allocation, compute
+pipeline layout, compute pipeline creation, dispatch, compute-to-compute and
+compute-to-indirect barriers, and indexed indirect draw recording. The live
+voxel presenter still uses CPU extraction while per-frame buffer ownership and
+descriptor updates are integrated; compute modules are not yet claimed as
+active GPU culling.
+
 ## Feature negotiation
 
 Do not assume descriptor indexing, indirect-count draws, subgroup operations, or timeline

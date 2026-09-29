@@ -3,6 +3,7 @@
 pub mod cpu;
 pub mod dl;
 pub mod gpu;
+pub mod gpu_pipeline;
 pub mod io_uring;
 pub mod present;
 pub mod surface;

@@ -4,6 +4,14 @@
 
 All site pages live in `astro-docs/docs/`. The site does not read the temporary root `docs/` directory at runtime or build time. Navigation is declared in `src/lib/docs.js`; add a slug, title, and group there when adding a page.
 
+## Documentation versions
+
+The default documentation version is **v0.1.1**. Its editable Markdown lives directly in `astro-docs/docs/` and includes the voxel/GPU changes. The **v0.1.0** archive lives in `astro-docs/docs/versions/v0.1.0/`; its 27 Markdown pages were copied from the repository's `v0.1.0` tag. Preserve this snapshot when editing current documentation.
+
+The version selector preserves the current page, switching between `/v/v0.1.1/<page>/` and `/v/v0.1.0/<page>/`. Navigation and Markdown source downloads use the selected version. Unversioned URLs serve v0.1.1. A missing archived page fails the build instead of silently displaying current content.
+
+When adding a version, register it and its content location in `src/lib/docs.js`, preserve the previous content as a snapshot, and verify both HTML and Markdown source routes. A documentation version does not create a Git release or change the engine's Cargo version.
+
 ## Comark pipeline
 
 The loader uses `createMarkdownParser` from `comark` and `renderHtmlFromDocument` from `@comark/html`. Parsing and rendering happen during Astro's static build. The browser receives HTML. Frontmatter, standard Markdown, tables, code fences, and Comark components are supported by the parser.

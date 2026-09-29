@@ -297,8 +297,10 @@ pub const VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO: u32 = 15;
 pub const VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO: u32 = 30;
 pub const VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO: u32 = 32;
 pub const VK_DESCRIPTOR_TYPE_STORAGE_BUFFER: u32 = 7;
+pub const VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: u32 = 6;
 pub const VK_SHADER_STAGE_VERTEX_BIT: u32 = 0x0000_0001;
 pub const VK_SHADER_STAGE_FRAGMENT_BIT: u32 = 0x0000_0010;
+pub const VK_SHADER_STAGE_COMPUTE_BIT: u32 = 0x0000_0020;
 pub const VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO: u32 = 33;
 pub const VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO: u32 = 34;
 pub const VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET: u32 = 35;
@@ -1105,6 +1107,103 @@ impl NativeDescriptorPool {
         self.handle
     }
 
+    /// Allocates and writes the three-buffer voxel compute descriptor set.
+    pub unsafe fn allocate_voxel_compute_set(
+        &self,
+        loader: &VulkanLoader,
+        layout: VkDescriptorSetLayout,
+        bounds: VkBuffer,
+        frustum: VkBuffer,
+        visibility: VkBuffer,
+        range: u64,
+    ) -> Result<VkDescriptorSet, VulkanLoaderError> {
+        if layout == 0 || bounds == 0 || frustum == 0 || visibility == 0 || range == 0 {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let allocate: VkAllocateDescriptorSets =
+            loader.device_command(self.device, b"vkAllocateDescriptorSets\0")?;
+        let layouts = [layout];
+        let info = DescriptorSetAllocateInfo {
+            s_type: VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            next: core::ptr::null(),
+            descriptor_pool: self.handle,
+            descriptor_set_count: 1,
+            set_layouts: layouts.as_ptr(),
+        };
+        let mut set = 0;
+        let result = unsafe { allocate(self.device, &info, &mut set) };
+        if result != VK_SUCCESS || set == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        let update: VkUpdateDescriptorSets =
+            loader.device_command(self.device, b"vkUpdateDescriptorSets\0")?;
+        let buffers = [
+            DescriptorBufferInfo {
+                buffer: bounds,
+                offset: 0,
+                range,
+            },
+            DescriptorBufferInfo {
+                buffer: frustum,
+                offset: 0,
+                range: 6 * 16,
+            },
+            DescriptorBufferInfo {
+                buffer: visibility,
+                offset: 0,
+                range,
+            },
+        ];
+        let writes = [
+            WriteDescriptorSet {
+                s_type: VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                next: core::ptr::null(),
+                dst_set: set,
+                dst_binding: 0,
+                dst_array_element: 0,
+                descriptor_count: 1,
+                descriptor_type: VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                image_info: core::ptr::null(),
+                buffer_info: &buffers[0],
+                texel_buffer_view: core::ptr::null(),
+            },
+            WriteDescriptorSet {
+                s_type: VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                next: core::ptr::null(),
+                dst_set: set,
+                dst_binding: 1,
+                dst_array_element: 0,
+                descriptor_count: 1,
+                descriptor_type: VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                image_info: core::ptr::null(),
+                buffer_info: &buffers[1],
+                texel_buffer_view: core::ptr::null(),
+            },
+            WriteDescriptorSet {
+                s_type: VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                next: core::ptr::null(),
+                dst_set: set,
+                dst_binding: 2,
+                dst_array_element: 0,
+                descriptor_count: 1,
+                descriptor_type: VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                image_info: core::ptr::null(),
+                buffer_info: &buffers[2],
+                texel_buffer_view: core::ptr::null(),
+            },
+        ];
+        unsafe {
+            update(
+                self.device,
+                writes.len() as u32,
+                writes.as_ptr(),
+                0,
+                core::ptr::null(),
+            )
+        };
+        Ok(set)
+    }
+
     /// Allocates one descriptor set and binds the UI storage buffer to it.
     ///
     /// # Safety
@@ -1578,6 +1677,22 @@ pub unsafe fn cmd_dispatch_device(
     Ok(())
 }
 
+/// Binds a compute or graphics pipeline through the device dispatch table.
+pub unsafe fn cmd_bind_pipeline_device(
+    loader: &VulkanLoader,
+    device: VkDevice,
+    command: VkCommandBuffer,
+    bind_point: u32,
+    pipeline: VkPipeline,
+) -> Result<(), VulkanLoaderError> {
+    if device.is_null() || command.is_null() || pipeline == 0 || bind_point > 1 {
+        return Err(VulkanLoaderError::InvalidQueuePlan);
+    }
+    let bind: VkCmdBindPipeline = loader.device_command(device, b"vkCmdBindPipeline\0")?;
+    unsafe { bind(command, bind_point, pipeline) };
+    Ok(())
+}
+
 /// Records indexed indirect draws for a live command buffer.
 ///
 /// # Safety
@@ -1948,6 +2063,98 @@ impl LogicalDevice {
         })
     }
 
+    /// Creates the descriptor pool for one voxel compute set.
+    pub unsafe fn create_voxel_compute_descriptor_pool(
+        &self,
+        loader: &VulkanLoader,
+    ) -> Result<NativeDescriptorPool, VulkanLoaderError> {
+        let create: VkCreateDescriptorPool =
+            loader.device_command(self.handle, b"vkCreateDescriptorPool\0")?;
+        let destroy: VkDestroyDescriptorPool =
+            loader.device_command(self.handle, b"vkDestroyDescriptorPool\0")?;
+        let sizes = [
+            DescriptorPoolSize {
+                descriptor_type: VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                descriptor_count: 2,
+            },
+            DescriptorPoolSize {
+                descriptor_type: VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                descriptor_count: 1,
+            },
+        ];
+        let info = DescriptorPoolCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+            max_sets: 1,
+            pool_size_count: sizes.len() as u32,
+            pool_sizes: sizes.as_ptr(),
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        Ok(NativeDescriptorPool {
+            handle,
+            device: self.handle,
+            destroy,
+        })
+    }
+
+    /// Descriptor ABI for GPU voxel culling: bounds, frustum planes, and
+    /// visibility/indirect storage. Bindings are intentionally stable across
+    /// the Windows and Linux PAL implementations.
+    pub unsafe fn create_voxel_compute_descriptor_set_layout(
+        &self,
+        loader: &VulkanLoader,
+    ) -> Result<NativeDescriptorSetLayout, VulkanLoaderError> {
+        let create: VkCreateDescriptorSetLayout =
+            loader.device_command(self.handle, b"vkCreateDescriptorSetLayout\0")?;
+        let destroy: VkDestroyDescriptorSetLayout =
+            loader.device_command(self.handle, b"vkDestroyDescriptorSetLayout\0")?;
+        let bindings = [
+            DescriptorSetLayoutBinding {
+                binding: 0,
+                descriptor_type: VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                descriptor_count: 1,
+                stage_flags: VK_SHADER_STAGE_COMPUTE_BIT,
+                immutable_samplers: core::ptr::null(),
+            },
+            DescriptorSetLayoutBinding {
+                binding: 1,
+                descriptor_type: VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                descriptor_count: 1,
+                stage_flags: VK_SHADER_STAGE_COMPUTE_BIT,
+                immutable_samplers: core::ptr::null(),
+            },
+            DescriptorSetLayoutBinding {
+                binding: 2,
+                descriptor_type: VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                descriptor_count: 1,
+                stage_flags: VK_SHADER_STAGE_COMPUTE_BIT,
+                immutable_samplers: core::ptr::null(),
+            },
+        ];
+        let info = DescriptorSetLayoutCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            binding_count: bindings.len() as u32,
+            bindings: bindings.as_ptr(),
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        Ok(NativeDescriptorSetLayout {
+            handle,
+            device: self.handle,
+            destroy,
+        })
+    }
+
     /// # Safety
     /// `loader` must dispatch through this live device and `descriptor_set_layout`
     /// must be a live compatible descriptor-set layout owned by this device.
@@ -1980,6 +2187,41 @@ impl LogicalDevice {
             set_layouts: set_layouts.as_ptr(),
             push_constant_range_count: 1,
             push_constant_ranges: &push,
+        };
+        let mut handle = 0;
+        let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };
+        if result != VK_SUCCESS || handle == 0 {
+            return Err(VulkanLoaderError::Api(result));
+        }
+        Ok(NativePipelineLayout {
+            handle,
+            device: self.handle,
+            destroy,
+        })
+    }
+
+    /// Creates the pipeline layout matching the voxel compute descriptor ABI.
+    pub unsafe fn create_voxel_compute_pipeline_layout(
+        &self,
+        loader: &VulkanLoader,
+        descriptor_set_layout: VkDescriptorSetLayout,
+    ) -> Result<NativePipelineLayout, VulkanLoaderError> {
+        if descriptor_set_layout == 0 {
+            return Err(VulkanLoaderError::InvalidQueuePlan);
+        }
+        let create: VkCreatePipelineLayout =
+            loader.device_command(self.handle, b"vkCreatePipelineLayout\0")?;
+        let destroy: VkDestroyPipelineLayout =
+            loader.device_command(self.handle, b"vkDestroyPipelineLayout\0")?;
+        let layouts = [descriptor_set_layout];
+        let info = PipelineLayoutCreateInfo {
+            s_type: VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            next: core::ptr::null(),
+            flags: 0,
+            set_layout_count: 1,
+            set_layouts: layouts.as_ptr(),
+            push_constant_range_count: 0,
+            push_constant_ranges: core::ptr::null(),
         };
         let mut handle = 0;
         let result = unsafe { create(self.handle, &info, core::ptr::null(), &mut handle) };

@@ -21,7 +21,12 @@ pub use super::swapchain::{
 const UINT64_MAX: u64 = u64::MAX;
 const OPAQUE_COMPOSITE_ALPHA: u32 = 0x0000_0001;
 const UI_UPLOAD_CAPACITY: u64 = 16 * 1024 * 1024;
-const WORLD_UPLOAD_CAPACITY: u64 = 4 * 1024 * 1024;
+// World instances are uploaded as a single frame-local batch. 64 MiB keeps
+// the native voxel stress example useful at roughly 100K blocks while still
+// failing deterministically on devices that cannot allocate the backing GPU
+// buffer. Larger worlds should be streamed by chunks instead of growing this
+// allocation without bound.
+const WORLD_UPLOAD_CAPACITY: u64 = 64 * 1024 * 1024;
 
 /// Native window handles the engine presents to.
 ///
@@ -109,6 +114,7 @@ pub struct PresentEngine {
     world_upload: Vec<u8>,
     world_view_projection: [f32; 16],
     world_draw_commands: Vec<crate::subsystems::renderer::WorldDrawCommand>,
+    physical: VkPhysicalDevice,
     _device: LogicalDevice,
     _instance: NativeInstance,
     // Keep the loader alive until every Vulkan child has been dropped; the
@@ -489,6 +495,7 @@ impl PresentEngine {
             world_upload: Vec::new(),
             world_view_projection: [0.0; 16],
             world_draw_commands: Vec::new(),
+            physical,
             loader,
             _device: device,
             _instance: instance,
@@ -815,7 +822,10 @@ impl PresentEngine {
 
     /// Rebuilds the swapchain (typically after `OutOfDate` from a resize).
     pub fn recreate(&mut self, size: PresentSize) -> Result<(), PresentError> {
-        let physical = self._device.raw();
+        // `_device.raw()` is a VkDevice, not a VkPhysicalDevice. Passing it to
+        // surface-capability queries corrupts the Vulkan call boundary during
+        // maximize/resize and can terminate the process on Windows.
+        let physical = self.physical;
         let (format, present_mode, extent, image_count) =
             configure_surface(&self.loader, physical, self.surface.raw(), size)?;
         self.format = format;

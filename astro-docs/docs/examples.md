@@ -77,3 +77,35 @@ GPU CI is intentionally disabled for now. The native Rubik example can still
 be run locally on a machine with a Vulkan driver. A dedicated GPU workflow will
 be added after a GPU server is available; it will then cover adapter discovery,
 native Vulkan presentation, GPU frame timing, and the 18M/60/120 milestones.
+
+## `gpu_stress_3d`
+
+`gpu_stress_3d` is a separate Minecraft-style voxel renderer; it does not reuse
+Rubik state or layer-turn logic. It generates height-mapped block terrain,
+extracts one mesh instance per block, and presents the world through the native
+Vulkan path on Windows. The player state has gravity, jumping, and bounded WASD
+movement, while the orbit camera follows the player.
+
+```powershell
+$env:RKE_GPU_STRESS_BLOCKS = "16384"
+$env:RKE_GPU_STRESS_MAX_FRAMES = "600"
+cargo run --release --example gpu_stress_3d
+```
+
+Controls:
+
+| Input | Action |
+| --- | --- |
+| W / A / S / D | Move the player |
+| Space | Jump |
+| Mouse drag | Orbit the camera around the player |
+| H | Regenerate terrain seed |
+| N | Reset player and camera |
+| Escape | Close the window |
+
+The example validates all six generated shader artifacts at startup. The UI and
+world graphics shaders are loaded by the native presentation path. The compute
+shader modules and matching Linux/Windows Vulkan descriptor, pipeline, barrier,
+dispatch, and indirect-draw contracts are implemented, but live compute
+buffer ownership remains a follow-up before the example switches from CPU
+extraction to GPU culling.

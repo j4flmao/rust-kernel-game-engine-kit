@@ -1,0 +1,14 @@
+---
+import Layout from '../../../layouts/Docs.astro';
+import { defaultVersion, entries, loadDoc, versions } from '../../../lib/docs.js';
+
+export function getStaticPaths() {
+  return versions.flatMap(version => [
+    { params: { version: version.id, slug: undefined }, props: { entry: entries[0], version: version.id } },
+    ...entries.map(entry => ({ params: { version: version.id, slug: entry.slug }, props: { entry, version: version.id } })),
+  ]);
+}
+
+const doc = await loadDoc(Astro.props.entry, Astro.props.version || defaultVersion);
+---
+<Layout doc={doc} />

@@ -3,6 +3,7 @@
 //! The public API is safe and checks slice sizes before crossing the C ABI.
 //! The feature is intentionally opt-in so the engine always has a pure-Rust
 //! fallback and does not require a native toolchain for normal builds.
+#![allow(unsafe_code)] // Checked slice wrappers own the native C FFI boundary.
 
 #[cfg(all(target_family = "unix", feature = "native-accel"))]
 unsafe extern "C" {
@@ -149,7 +150,7 @@ pub fn calculate_aabb(positions_xyz: &[f32]) -> Option<([f32; 3], [f32; 3])> {
     {
         min_xyz = [positions_xyz[0], positions_xyz[1], positions_xyz[2]];
         max_xyz = min_xyz;
-        for point in positions_xyz.chunks_exact(3).skip(1) {
+        for point in positions_xyz.as_chunks::<3>().0.iter().skip(1) {
             for axis in 0..3 {
                 min_xyz[axis] = min_xyz[axis].min(point[axis]);
                 max_xyz[axis] = max_xyz[axis].max(point[axis]);
@@ -162,7 +163,7 @@ pub fn calculate_aabb(positions_xyz: &[f32]) -> Option<([f32; 3], [f32; 3])> {
 #[cfg(not(all(target_family = "unix", feature = "native-accel")))]
 fn rust_generate_vertex_normals(positions: &[f32], indices: &[u32], normals: &mut [f32]) {
     normals.fill(0.0);
-    for triangle in indices.chunks_exact(3) {
+    for triangle in indices.as_chunks::<3>().0 {
         let a = triangle[0] as usize * 3;
         let b = triangle[1] as usize * 3;
         let c = triangle[2] as usize * 3;
@@ -187,7 +188,7 @@ fn rust_generate_vertex_normals(positions: &[f32], indices: &[u32], normals: &mu
             }
         }
     }
-    for normal in normals.chunks_exact_mut(3) {
+    for normal in normals.as_chunks_mut::<3>().0 {
         let length = normal.iter().map(|value| value * value).sum::<f32>().sqrt();
         if length > 0.0 {
             for value in normal {
@@ -197,6 +198,7 @@ fn rust_generate_vertex_normals(positions: &[f32], indices: &[u32], normals: &mu
     }
 }
 
+#[cfg(not(all(target_family = "unix", feature = "native-accel")))]
 fn rust_batch_cull_spheres(
     spheres_xyzw: &[f32],
     planes_xyzd: &[f32; 24],
@@ -205,7 +207,7 @@ fn rust_batch_cull_spheres(
 ) {
     for object in 0..count as usize {
         let sphere = &spheres_xyzw[object * 4..object * 4 + 4];
-        visible[object] = planes_xyzd.chunks_exact(4).all(|plane| {
+        visible[object] = planes_xyzd.as_chunks::<4>().0.iter().all(|plane| {
             plane[0] * sphere[0] + plane[1] * sphere[1] + plane[2] * sphere[2] + plane[3]
                 >= -sphere[3]
         }) as u8;
@@ -254,7 +256,11 @@ mod tests {
         let indices = [0, 1, 2];
         let mut normals = [0.0; 9];
         generate_vertex_normals(&positions, &indices, &mut normals);
-        assert!(normals.chunks_exact(3).all(|normal| normal[2] > 0.99));
+        assert!(normals
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .all(|normal| normal[2] > 0.99));
         assert_eq!(
             calculate_aabb(&positions),
             Some(([0.0, 0.0, 0.0], [1.0, 1.0, 0.0]))

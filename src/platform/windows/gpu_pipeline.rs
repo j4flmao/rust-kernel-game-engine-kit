@@ -30,6 +30,12 @@ struct ComputeInfo {
     base_pipeline_index: i32,
 }
 
+/// Creates a compute pipeline using the shader's main entry point.
+///
+/// # Safety
+/// All handles must be live and belong to the same device as the loader.
+/// The shader must have a compute entry point compatible with the layout.
+/// Destroy the returned pipeline only after all GPU uses have completed.
 pub unsafe fn create_compute_pipeline(
     loader: &VulkanLoader,
     device: VkDevice,
@@ -85,6 +91,12 @@ pub const VK_ACCESS_INDIRECT_COMMAND_READ: u32 = 0x2;
 /// Records compute culling, indirect-command generation, synchronization, and
 /// the final indexed indirect draw. Descriptor binding remains owned by the
 /// caller because the voxel instance layout is application-specific.
+///
+/// # Safety
+/// All handles must belong to the same live device. The command buffer must be
+/// recording with compatible descriptors, vertex/index bindings and draw state.
+/// Buffer ranges, dispatch sizes and indirect records must satisfy Vulkan limits;
+/// keep all resources alive until execution completes and synchronize their use.
 #[allow(clippy::too_many_arguments)]
 pub unsafe fn record_cull_and_indirect_draw(
     loader: &VulkanLoader,

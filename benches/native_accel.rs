@@ -5,7 +5,12 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use rust_kernel_game_engine_kit::native_accel;
 
 fn rust_transform(input: &[f32], output: &mut [f32], matrix: &[f32; 12]) {
-    for (source, target) in input.chunks_exact(3).zip(output.chunks_exact_mut(3)) {
+    for (source, target) in input
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .zip(output.as_chunks_mut::<3>().0)
+    {
         let x = source[0];
         let y = source[1];
         let z = source[2];

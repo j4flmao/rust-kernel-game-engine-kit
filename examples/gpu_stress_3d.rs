@@ -17,7 +17,9 @@ mod state;
 #[path = "gpu_stress_3d/ui.rs"]
 mod ui;
 
+#[cfg(windows)]
 use driver::VoxelDriver;
+#[cfg(windows)]
 use scene::VoxelScene;
 
 const WIDTH: u32 = 1280;
@@ -25,13 +27,11 @@ const HEIGHT: u32 = 800;
 
 fn main() {
     report_shader_bundle();
-    let driver = VoxelDriver::new();
-    let scene = VoxelScene::new();
     #[cfg(windows)]
-    run_native(driver, scene);
+    run_native(VoxelDriver::new(), VoxelScene::new());
     #[cfg(not(windows))]
     println!(
-        "gpu_stress_3d: Linux validates voxel extraction; native window path is enabled on Windows"
+        "gpu_stress_3d: shader inventory only on this platform; native window path is enabled on Windows"
     );
 }
 

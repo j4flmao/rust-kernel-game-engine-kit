@@ -1108,6 +1108,13 @@ impl NativeDescriptorPool {
     }
 
     /// Allocates and writes the three-buffer voxel compute descriptor set.
+    ///
+    /// # Safety
+    /// The pool, layout and buffers must belong to the loader's live device.
+    /// The pool must be externally synchronized and have capacity. The layout must
+    /// match the voxel ABI; storage buffers must cover range bytes and the uniform
+    /// buffer 96 bytes, with appropriate usage flags. Keep buffers alive until
+    /// all commands using the returned set have completed.
     pub unsafe fn allocate_voxel_compute_set(
         &self,
         loader: &VulkanLoader,
@@ -1678,6 +1685,11 @@ pub unsafe fn cmd_dispatch_device(
 }
 
 /// Binds a compute or graphics pipeline through the device dispatch table.
+///
+/// # Safety
+/// All handles must belong to the same live device. The command buffer must
+/// be recording and externally synchronized, and the pipeline must match the
+/// bind point and command pool queue capabilities. Keep it alive until GPU use ends.
 pub unsafe fn cmd_bind_pipeline_device(
     loader: &VulkanLoader,
     device: VkDevice,
@@ -2064,6 +2076,10 @@ impl LogicalDevice {
     }
 
     /// Creates the descriptor pool for one voxel compute set.
+    ///
+    /// # Safety
+    /// The device and loader must remain live through creation and destruction
+    /// of the returned pool. Synchronize pool access and finish GPU uses before drop.
     pub unsafe fn create_voxel_compute_descriptor_pool(
         &self,
         loader: &VulkanLoader,
@@ -2105,6 +2121,10 @@ impl LogicalDevice {
     /// Descriptor ABI for GPU voxel culling: bounds, frustum planes, and
     /// visibility/indirect storage. Bindings are intentionally stable across
     /// the Windows and Linux PAL implementations.
+    ///
+    /// # Safety
+    /// The device and loader must be live and compatible. Destroy the returned
+    /// layout before the device, after all dependent uses have ended.
     pub unsafe fn create_voxel_compute_descriptor_set_layout(
         &self,
         loader: &VulkanLoader,
@@ -2201,6 +2221,11 @@ impl LogicalDevice {
     }
 
     /// Creates the pipeline layout matching the voxel compute descriptor ABI.
+    ///
+    /// # Safety
+    /// The device, loader and descriptor_set_layout must be live and compatible.
+    /// The set layout must match the voxel shader ABI. Destroy the returned
+    /// layout before the device and after all dependent uses have ended.
     pub unsafe fn create_voxel_compute_pipeline_layout(
         &self,
         loader: &VulkanLoader,

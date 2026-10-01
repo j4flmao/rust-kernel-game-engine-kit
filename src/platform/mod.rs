@@ -8,7 +8,11 @@
 pub mod linux;
 pub mod thread_pool;
 pub mod vulkan_policy;
+pub mod world_upload;
 pub mod ui_shaders {
+    //! Generated SPIR-V for graphics and compute passes. The compute shaders
+    //! are prepared here before native command recording wires them into a
+    //! Vulkan compute/indirect-draw pass.
     include!(concat!(env!("OUT_DIR"), "/ui_shaders.rs"));
 }
 #[cfg(target_os = "linux")]

@@ -1,0 +1,37 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+struct DrawCommand {
+    uint index_count;
+    uint instance_count;
+    uint first_index;
+    int vertex_offset;
+    uint first_instance;
+};
+
+layout(set = 0, binding = 0, std430) readonly buffer Visibility {
+    uint visible[];
+};
+
+layout(set = 0, binding = 1, std430) buffer DrawCommands {
+    DrawCommand commands[];
+};
+
+layout(push_constant) uniform DrawConfig {
+    uint index_count;
+    uint first_index;
+    int vertex_offset;
+};
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= visible.length() || visible[index] == 0u) {
+        return;
+    }
+    commands[index].index_count = index_count;
+    commands[index].instance_count = 1u;
+    commands[index].first_index = first_index;
+    commands[index].vertex_offset = vertex_offset;
+    commands[index].first_instance = index;
+}

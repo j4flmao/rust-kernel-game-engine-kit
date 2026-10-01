@@ -52,6 +52,22 @@ The project follows this priority order:
 - Linux includes raw clock/syscall helpers, dynamic loading, X11 surface support, Vulkan loader/device helpers, swapchain support, io_uring SQ/CQ mapping, and futex-oriented threading primitives.
 - Windows includes Win32 window/surface support, Vulkan loader/device helpers, swapchain support, dynamic loading, CPU/threading helpers, and IOCP overlapped file streaming.
 - The native renderer models command-buffer, semaphore, fence, acquire, submit, and present lifecycle validation.
+- `examples/gpu_stress_3d` is a standalone Minecraft-style voxel renderer. It
+  generates height-mapped blocks, supports WASD movement, jumping, mouse orbit,
+  terrain regeneration, resize handling, and a native Vulkan presentation loop.
+- The shader bundle contains graphics shaders (`world.vert`/`world.frag` and
+  `ui.vert`/`ui.frag`) plus compute shaders for frustum culling and indirect
+  command generation. Both Linux and Windows PALs expose matching compute
+  pipeline, descriptor, barrier, dispatch, and indirect-draw contracts.
+- The voxel example runs on Windows and Linux/X11, with cached chunk-local greedy
+  meshing, hidden-face removal, and separate terrain materials. The default finite world
+  reports solid blocks, exposed faces, merged quads, and upload bytes separately.
+  Unchanged terrain stays GPU-resident; camera updates do not re-upload geometry.
+  `RKE_GPU_STRESS_TARGET_FPS` selects 60/120 FPS pacing or `0` for no CPU cap,
+  with live window-title counters (not GPU timestamp measurements).
+- The current voxel presenter uses CPU meshing and GPU graphics upload. The
+  compute shaders are compiled and validated, but their descriptor/buffer
+  lifetime is not yet enabled in the live example frame owner.
 - The composition root defaults to headless mode. On Windows, set `RUST_KERNEL_NATIVE_VULKAN=1` to try the native Win32/Vulkan bootstrap; unavailable native setup falls back to the headless renderer.
 - Linux native window bootstrap is not enabled in `src/main.rs` yet. Linux PAL primitives exist, but composition-root wiring and real X11/Vulkan hardware validation are still required.
 
@@ -116,6 +132,53 @@ cargo run --bin rust-kernel-kit
 ```
 
 Linux syscall/time tests are selected by target configuration. To test native X11/Vulkan, provide a valid `DISPLAY`/Wayland-X11 bridge and install the matching Vulkan runtime. Headless CI does not prove that presentation succeeds on a real driver.
+
+### Voxel GPU stress example
+
+On Windows, run the independent Minecraft-style block renderer:
+
+```powershell
+$env:RKE_GPU_STRESS_BLOCKS = "16384"
+$env:RKE_GPU_STRESS_MAX_FRAMES = "600"
+cargo run --release --example gpu_stress_3d
+```
+
+Controls are `WASD` to move, `Space` to jump, mouse drag to orbit the camera,
+`H` to regenerate terrain, `N` to reset the player/camera, and `Esc` to exit.
+Set `RKE_GPU_STRESS_STREAM_RADIUS=1`–`4` for bounded procedural streaming instead
+of the finite block-count scene. It retains up to 81 chunks, builds at most two
+per frame, and evicts distant chunks. Changed residency still repacks/uploads the
+whole active mesh within a 4 MiB budget; per-chunk GPU uploads are not implemented.
+
+## Native performance path
+
+Native correctness compares transform, culling, normals and AABB with checked
+Rust baselines. Dedicated workflows cover GCC/Clang, Windows fallback,
+instrumented C and bounded fuzzing. Criterion labels the actual backend and
+includes 48 cases; Windows fallback is never reported as C.
+See [native validation](native/README.md) for commands and input contracts.
+
+The optional `native-accel` feature provides batch CPU transform and frustum
+culling through a small C ABI. Linux builds use the C implementation; Windows
+keeps the same safe API but uses the Rust fallback by default so MSVC builds
+remain reproducible. The feature is never called once per object.
+
+```powershell
+cargo test --all-features
+cargo bench --bench native_accel --features native-accel
+```
+
+For strict GLSL validation, install `glslc` and run:
+
+```powershell
+$env:RKE_REQUIRE_GLSLC="1"
+cargo check --all-targets --all-features
+```
+
+The repository supports Linux and Windows platform paths, but native Vulkan
+presentation still depends on the installed driver, loader, window system,
+and hardware. Headless Rust tests do not claim that a real GPU presented a
+frame.
 
 ## Quality gates
 

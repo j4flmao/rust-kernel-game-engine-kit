@@ -723,6 +723,49 @@ pub struct GpuInstanceRecord {
 
 pub const GPU_INSTANCE_RECORD_SIZE: usize = core::mem::size_of::<GpuInstanceRecord>();
 
+/// Validated dispatch and buffer sizes for the GPU culling/indirect-draw
+/// compute passes. Native backends consume this contract without recomputing
+/// sizes from gameplay-owned data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpuCullingPlan {
+    pub instance_count: u32,
+    pub workgroup_size: u32,
+    pub workgroup_count: u32,
+    pub visibility_bytes: usize,
+    pub indirect_bytes: usize,
+}
+
+impl GpuCullingPlan {
+    pub fn try_new(
+        instance_count: u32,
+        workgroup_size: u32,
+        max_instances: u32,
+    ) -> Result<Self, GpuPreparationError> {
+        if workgroup_size == 0 || instance_count > max_instances {
+            return Err(GpuPreparationError::InvalidWorkgroupSize);
+        }
+        let workgroup_count = instance_count
+            .checked_add(workgroup_size - 1)
+            .ok_or(GpuPreparationError::IndexOverflow)?
+            / workgroup_size;
+        let visibility_bytes = usize::try_from(instance_count)
+            .map_err(|_| GpuPreparationError::IndexOverflow)?
+            .checked_mul(core::mem::size_of::<u32>())
+            .ok_or(GpuPreparationError::IndexOverflow)?;
+        let indirect_bytes = usize::try_from(instance_count)
+            .map_err(|_| GpuPreparationError::IndexOverflow)?
+            .checked_mul(VULKAN_INDEXED_INDIRECT_COMMAND_SIZE)
+            .ok_or(GpuPreparationError::IndexOverflow)?;
+        Ok(Self {
+            instance_count,
+            workgroup_size,
+            workgroup_count,
+            visibility_bytes,
+            indirect_bytes,
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct GpuFrameCommandPlan {
     pub instance_count: u32,

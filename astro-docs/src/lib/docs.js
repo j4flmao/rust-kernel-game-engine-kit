@@ -3,6 +3,11 @@ import { renderHtmlFromDocument } from '@comark/html';
 import { codeToHtml, bundledLanguages } from 'shiki';
 
 const repo = 'https://github.com/j4flmao/rust-kernel-game-engine-kit/blob/main/';
+export const versions = [
+  { id: 'v0.1.1', label: 'v0.1.1', description: 'Current documentation with voxel/GPU updates' },
+  { id: 'v0.1.0', label: 'v0.1.0', description: 'Previous released documentation' },
+];
+export const defaultVersion = 'v0.1.1';
 export const entries = [
   ['overview', 'Overview', 'Start here', 'src/content/overview.md'],
   ['getting-started', 'Getting started', 'Start here', 'src/content/getting-started.md'],
@@ -37,16 +42,23 @@ const parse = createMarkdownParser({ autoClose: false });
 export function href(slug = '') {
   return `${import.meta.env.BASE_URL.replace(/\/$/, '')}/${slug ? `${slug}/` : ''}`;
 }
+export function versionHref(version = defaultVersion, slug = '') {
+  return href(`v/${version}${slug ? `/${slug}` : ''}`);
+}
 const markdownSources = import.meta.glob('../../docs/*.md', { query: '?raw', import: 'default', eager: true });
+const versionedMarkdownSources = import.meta.glob('../../docs/versions/*/*.md', { query: '?raw', import: 'default', eager: true });
 
-export function docSource(entry) {
-  const source = markdownSources[`../../${entry.file}`];
-  if (typeof source !== 'string') throw new Error(`Missing documentation source: ${entry.file}`);
+export function docSource(entry, version = defaultVersion) {
+  if (!versions.some(item => item.id === version)) throw new Error(`Unknown documentation version: ${version}`);
+  const source = version === 'v0.1.1'
+    ? markdownSources[`../../${entry.file}`]
+    : versionedMarkdownSources[`../../docs/versions/${version}/${entry.slug}.md`];
+  if (typeof source !== 'string') throw new Error(`Missing documentation source: ${version}/${entry.slug}`);
   return source;
 }
 
-export async function loadDoc(entry) {
-  const source = docSource(entry);
+export async function loadDoc(entry, version = defaultVersion) {
+  const source = docSource(entry, version);
   const document = await parse(source);
   const headings = [];
   function visit(nodes) {
@@ -60,7 +72,7 @@ export async function loadDoc(entry) {
       if (tag === 'a' && typeof attrs.href === 'string' && !/^(https?:|mailto:|#|\/)/.test(attrs.href)) {
         const [path, anchor] = attrs.href.split('#');
         const target = entries.find(e => e.file.split('/').at(-1) === path.split('/').at(-1) || e.original.split('/').at(-1) === path.split('/').at(-1));
-        attrs.href = target ? href(target.slug) + (anchor ? `#${anchor}` : '') : new URL(path, repo + (entry.reference ? 'docs/' : '')).href;
+        attrs.href = target ? versionHref(version, target.slug) + (anchor ? `#${anchor}` : '') : new URL(path, repo + (entry.reference ? 'docs/' : '')).href;
       }
       visit(children);
     }
@@ -89,5 +101,5 @@ export async function loadDoc(entry) {
       },
     },
   });
-  return { ...entry, html, headings, source: href(`sources/${entry.slug}.md`).replace(/\/$/, '') };
+  return { ...entry, version, html, headings, source: href(`sources/v/${version}/${entry.slug}.md`).replace(/\/$/, '') };
 }

@@ -1,9 +1,10 @@
 ---
-import { entries, href } from '../lib/docs.js';
+import { defaultVersion, entries, href, versionHref, versions } from '../lib/docs.js';
 import '../styles/docs.css';
 const { doc } = Astro.props;
 const groups = [...new Set(entries.map(e => e.group))];
 const index = entries.findIndex(e => e.slug === doc.slug);
+const version = doc.version || defaultVersion;
 ---
 <!doctype html>
 <html lang="en">
@@ -17,15 +18,21 @@ const index = entries.findIndex(e => e.slug === doc.slug);
   <body>
     <a class="skip" href="#content">Skip to content</a>
     <header>
-      <a class="brand" href={href()}><span class="mark">K</span><span>RUST KERNEL<span class="subbrand">ENGINE DOCUMENTATION</span></span></a>
-      <div class="header-right"><span class="version">v0.1.0</span><a href="https://github.com/j4flmao/rust-kernel-game-engine-kit">GitHub ↗</a></div>
+      <a class="brand" href={versionHref(version)}><span class="mark">K</span><span>RUST KERNEL<span class="subbrand">ENGINE DOCUMENTATION</span></span></a>
+      <div class="header-right">
+        <label class="version-picker" for="docs-version">Version</label>
+        <select id="docs-version" class="version-select" aria-label="Documentation version">
+          {versions.map(item => <option value={versionHref(item.id, doc.slug)} selected={item.id === version}>{item.label}</option>)}
+        </select>
+        <a href="https://github.com/j4flmao/rust-kernel-game-engine-kit">GitHub ↗</a>
+      </div>
     </header>
     <div class="shell">
       <aside class="sidebar">
         <details class="navigation" open>
           <summary>Documentation menu</summary>
           <nav aria-label="Documentation">
-            {groups.map(group => <section><h2>{group}</h2>{entries.filter(e => e.group === group).map(e => <a href={href(e.slug)} aria-current={doc.slug === e.slug ? 'page' : undefined}>{e.title}</a>)}</section>)}
+            {groups.map(group => <section><h2>{group}</h2>{entries.filter(e => e.group === group).map(e => <a href={versionHref(version, e.slug)} aria-current={doc.slug === e.slug ? 'page' : undefined}>{e.title}</a>)}</section>)}
           </nav>
         </details>
         <div class="sidebar-footer">Security. Stability. Speed.<br /><span>Microkernel-style game engine</span></div>
@@ -37,8 +44,8 @@ const index = entries.findIndex(e => e.slug === doc.slug);
         <article class="prose" set:html={doc.html} />
         <div class="source"><a href={doc.source}>View Markdown source ↗</a></div>
         <nav class="pagination" aria-label="Adjacent pages">
-          {index > 0 ? <a href={href(entries[index - 1].slug)}><small>Previous</small>{entries[index - 1].title}</a> : <span />}
-          {index < entries.length - 1 && <a href={href(entries[index + 1].slug)}><small>Next</small>{entries[index + 1].title}</a>}
+          {index > 0 ? <a href={versionHref(version, entries[index - 1].slug)}><small>Previous</small>{entries[index - 1].title}</a> : <span />}
+          {index < entries.length - 1 && <a href={versionHref(version, entries[index + 1].slug)}><small>Next</small>{entries[index + 1].title}</a>}
         </nav>
         <footer>Rust Kernel Engine Kit · Apache-2.0 · Built with Astro + Comark</footer>
       </main>
@@ -73,6 +80,10 @@ const index = entries.findIndex(e => e.slug === doc.slug);
         } catch { button.textContent = 'Select code to copy'; }
         setTimeout(() => { button.textContent = 'Copy code'; }, 2000);
       });
+    });
+    const picker = document.querySelector<HTMLSelectElement>('#docs-version');
+    picker?.addEventListener('change', () => {
+      if (picker.value) window.location.assign(picker.value);
     });
   </script>
 </html>

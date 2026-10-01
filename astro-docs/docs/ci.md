@@ -165,6 +165,21 @@ or relaxed; this is a GitHub branch-protection policy choice, not a CI failure.
 
 ## Rollout order
 
+### Native C validation
+
+The native-correctness workflow compares all four batch operations against
+scalar Rust using GCC and Clang on Linux and the Rust fallback on Windows.
+It checks feature-enabled and feature-disabled builds, empty/odd batches,
+degenerate triangles and invalid input rejection. Non-finite input and
+negative sphere radii panic before entering C.
+
+The native-sanitizers workflow instruments the C translation unit with
+ASan/UBSan, runs 4,096 deterministic cases and 60 seconds of libFuzzer, then
+checks Rust-to-C calls using GCC UBSan. Sanitizer artifacts are saved on failure.
+The native-performance workflow supplies separate GCC/Clang CPU reports.
+These workflows run on relevant pull requests, pushes to any branch and
+manual dispatch, without a cron schedule or GPU runner requirement.
+
 1. Inventory existing workflow job names.
 2. Add documentation and headless contract checks.
 3. Add missing Linux/Windows capability-gated jobs.

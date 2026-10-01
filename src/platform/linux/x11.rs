@@ -23,8 +23,13 @@ type XDestroyWindow = unsafe extern "C" fn(*mut Display, Window) -> i32;
 type XFlush = unsafe extern "C" fn(*mut Display) -> i32;
 type XPending = unsafe extern "C" fn(*mut Display) -> i32;
 type XNextEvent = unsafe extern "C" fn(*mut Display, *mut XEvent);
+type XSelectInput = unsafe extern "C" fn(*mut Display, Window, i64) -> i32;
+type XLookupKeysym = unsafe extern "C" fn(*mut XEvent, i32) -> u64;
+type XInternAtom = unsafe extern "C" fn(*mut Display, *const i8, i32) -> Atom;
+type XSetWMProtocols = unsafe extern "C" fn(*mut Display, Window, *mut Atom, i32) -> i32;
+type XStoreName = unsafe extern "C" fn(*mut Display, Window, *const i8) -> i32;
 
-#[repr(C)]
+#[repr(C, align(8))]
 struct XEvent {
     bytes: [u8; 192],
 }
@@ -65,6 +70,11 @@ pub struct X11Library {
     flush: XFlush,
     pending: XPending,
     next_event: XNextEvent,
+    select_input: XSelectInput,
+    lookup_keysym: XLookupKeysym,
+    intern_atom: XInternAtom,
+    set_protocols: XSetWMProtocols,
+    store_name: XStoreName,
 }
 
 impl X11Library {
@@ -89,6 +99,11 @@ impl X11Library {
             flush: symbol!("XFlush", XFlush),
             pending: symbol!("XPending", XPending),
             next_event: symbol!("XNextEvent", XNextEvent),
+            select_input: symbol!("XSelectInput", XSelectInput),
+            lookup_keysym: symbol!("XLookupKeysym", XLookupKeysym),
+            intern_atom: symbol!("XInternAtom", XInternAtom),
+            set_protocols: symbol!("XSetWMProtocols", XSetWMProtocols),
+            store_name: symbol!("XStoreName", XStoreName),
             _library: library,
         })
     }
@@ -102,7 +117,12 @@ impl X11Library {
         let screen = unsafe { (self.default_screen)(display) };
         let root = unsafe { (self.root_window)(display, screen) };
         let window = unsafe { (self.create_window)(display, root, 0, 0, 640, 480, 0, 0, 0) };
+        let mut delete_atom =
+            unsafe { (self.intern_atom)(display, c"WM_DELETE_WINDOW".as_ptr(), 0) };
+        let protocols_atom = unsafe { (self.intern_atom)(display, c"WM_PROTOCOLS".as_ptr(), 0) };
         unsafe {
+            (self.select_input)(display, window, 1 | 2 | 4 | 8 | 64 | (1 << 17) | (1 << 21));
+            (self.set_protocols)(display, window, &mut delete_atom, 1);
             (self.map_window)(display, window);
             (self.flush)(display);
         }
@@ -110,6 +130,12 @@ impl X11Library {
             api: self,
             display,
             window,
+            delete_atom,
+            protocols_atom,
+            size: WindowSize {
+                width: 640,
+                height: 480,
+            },
         })
     }
 }
@@ -118,8 +144,22 @@ pub struct X11Display<'a> {
     api: &'a X11Library,
     display: *mut Display,
     window: Window,
+    delete_atom: Atom,
+    protocols_atom: Atom,
+    size: WindowSize,
 }
 impl X11Display<'_> {
+    pub fn set_title(&self, title: &str) {
+        if let Ok(title) = std::ffi::CString::new(title) {
+            // SAFETY: owned display/window and NUL-terminated text.
+            unsafe {
+                (self.api.store_name)(self.display, self.window, title.as_ptr());
+            }
+        }
+    }
+    pub fn client_size(&self) -> Option<WindowSize> {
+        Some(self.size)
+    }
     pub fn display_handle(&self) -> *mut c_void {
         self.display
     }
@@ -140,25 +180,47 @@ impl X11Display<'_> {
             let event_type = i32::from_ne_bytes(event.bytes[0..4].try_into().unwrap());
             match event_type {
                 KEY_PRESS | KEY_RELEASE => {
-                    let key = u32::from_ne_bytes(event.bytes[84..88].try_into().unwrap());
+                    let symbol = unsafe { (self.api.lookup_keysym)(&mut event, 0) };
+                    let key = match symbol {
+                        0xff1b => 0x1b,
+                        0x61..=0x7a => symbol as u32 - 32,
+                        _ => symbol as u32,
+                    };
                     input_events.push(InputEvent::Key {
                         key,
                         pressed: event_type == KEY_PRESS,
                     });
                 }
                 MOTION_NOTIFY => {
-                    let x = i16::from_ne_bytes(event.bytes[72..74].try_into().unwrap()) as i32;
-                    let y = i16::from_ne_bytes(event.bytes[74..76].try_into().unwrap()) as i32;
+                    let x = i32::from_ne_bytes(event.bytes[64..68].try_into().unwrap());
+                    let y = i32::from_ne_bytes(event.bytes[68..72].try_into().unwrap());
                     input_events.push(InputEvent::MouseMoved { x, y });
                 }
                 CONFIGURE_NOTIFY => {
                     let width =
-                        u16::from_ne_bytes(event.bytes[56..58].try_into().unwrap()).max(1) as u32;
+                        i32::from_ne_bytes(event.bytes[56..60].try_into().unwrap()).max(1) as u32;
                     let height =
-                        u16::from_ne_bytes(event.bytes[58..60].try_into().unwrap()).max(1) as u32;
+                        i32::from_ne_bytes(event.bytes[60..64].try_into().unwrap()).max(1) as u32;
+                    self.size = WindowSize { width, height };
                     window_events.push(WindowEvent::Resized(WindowSize { width, height }));
                 }
-                CLIENT_MESSAGE => window_events.push(WindowEvent::CloseRequested),
+                4 | 5 => {
+                    let button = u32::from_ne_bytes(event.bytes[84..88].try_into().unwrap());
+                    if (1..=3).contains(&button) {
+                        input_events.push(InputEvent::MouseButton {
+                            button: (button - 1) as u8,
+                            pressed: event_type == 4,
+                        });
+                    }
+                }
+                9 | 10 => window_events.push(WindowEvent::Focused(event_type == 9)),
+                CLIENT_MESSAGE => {
+                    let message = u64::from_ne_bytes(event.bytes[40..48].try_into().unwrap());
+                    let atom = u64::from_ne_bytes(event.bytes[56..64].try_into().unwrap());
+                    if message == self.protocols_atom && atom == self.delete_atom {
+                        window_events.push(WindowEvent::CloseRequested);
+                    }
+                }
                 _ => {}
             }
         }

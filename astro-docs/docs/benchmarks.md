@@ -1,6 +1,6 @@
 # Benchmarks and reports
 
-## Two suites
+## Kernel and milestone suites
 
 `benches/kernel.rs` measures kernel/runtime primitives. `benches/quality_milestones/performance_milestone.rs` measures the separate milestone harness. Keep their output directories separate when comparing results.
 
@@ -70,6 +70,25 @@ These paths are relative to the repository root. Keep the complete Criterion dir
 Compare identical workload IDs, build profiles, and hardware. Record toolchain, CPU, OS, and configuration. Hosted runner variance makes single-run performance claims unreliable. Inspect confidence intervals and distributions before attributing small changes to a patch.
 
 ## CI artifacts
+
+### Native CPU report
+
+The additional native suite compares checked scalar Rust with the selected
+backend for transform, culling, vertex normals and AABB. Its 48 cases cover
+1K, 64K, 1M and 1,000,003 items, including culling at 0%, 50% and 100% visibility.
+Windows labels its backend rust-fallback; Linux with native-accel labels it c.
+Input validation is included in both timings; output allocation is excluded.
+
+```powershell
+$env:CARGO_TARGET_DIR = "target/native-performance"
+cargo bench --locked --bench native_accel --features native-accel
+Remove-Item Env:CARGO_TARGET_DIR
+```
+
+Open target/native-performance/criterion/report/index.html. CI uploads separate
+native-criterion-report-gcc and native-criterion-report-clang artifacts with
+environment.txt (CPU, compiler and Rust version). These CPU measurements do
+not establish GPU frame rates and are not a hard performance gate.
 
 The quality milestone workflow uploads `quality-milestone-criterion-report`. Download and extract the whole artifact so the HTML can load its supporting files. The workflow also checks that HTML was produced. Missing baseline files should be investigated as report/cache state rather than assumed to be a renderer fault.
 

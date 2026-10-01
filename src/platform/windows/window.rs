@@ -78,6 +78,7 @@ extern "system" {
         param: *const core::ffi::c_void,
     ) -> Handle;
     fn ShowWindow(window: Handle, command: i32) -> i32;
+    fn SetWindowTextW(window: Handle, text: *const u16) -> i32;
     fn DestroyWindow(window: Handle) -> i32;
     fn PeekMessageA(message: *mut Message, window: Handle, min: u32, max: u32, remove: u32) -> i32;
     fn TranslateMessage(message: *const Message) -> i32;
@@ -139,6 +140,13 @@ struct Rect {
 }
 
 impl Win32Window {
+    pub fn set_title(&self, title: &str) {
+        let title: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
+        // SAFETY: live owned HWND and NUL-terminated UTF-16 text.
+        unsafe {
+            SetWindowTextW(self.handle, title.as_ptr());
+        }
+    }
     pub fn create(title: &str, width: i32, height: i32) -> Result<Self, WindowError> {
         if width <= 0 || height <= 0 {
             return Err(WindowError {

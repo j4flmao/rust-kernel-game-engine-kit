@@ -1958,6 +1958,22 @@ impl Drop for NativeCommandPool {
 }
 
 impl LogicalDevice {
+    /// Wait before destroying resources referenced by pending work.
+    ///
+    /// # Safety
+    /// The caller must externally synchronize all queues of this device.
+    pub unsafe fn wait_idle(&self, loader: &VulkanLoader) -> Result<(), VulkanLoaderError> {
+        let wait: unsafe extern "system" fn(VkDevice) -> VkResult =
+            loader.command(b"vkDeviceWaitIdle\0")?;
+        // SAFETY: this owns the live device; queue synchronization is required above.
+        let result = unsafe { wait(self.raw()) };
+        if result == VK_SUCCESS {
+            Ok(())
+        } else {
+            Err(VulkanLoaderError::Api(result))
+        }
+    }
+
     pub const fn raw(&self) -> VkDevice {
         self.handle
     }

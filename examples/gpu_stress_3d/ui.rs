@@ -3,7 +3,7 @@
 pub const HELP_LINES: &[&str] = &[
     "GPU STRESS 3D - VOXEL WORLD",
     "Left drag: orbit camera",
-    "Right drag: orbit camera",
+    "W/A/S/D: move   Space: jump",
     "H: regenerate terrain   N: reset camera",
     "Esc: quit",
 ];

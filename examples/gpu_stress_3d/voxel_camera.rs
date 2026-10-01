@@ -41,13 +41,13 @@ impl OrbitCamera {
             target[2] + self.distance * cos_pitch * self.yaw.cos(),
         ];
         let view = look_at(eye, target, [0.0, 1.0, 0.0]);
-        let projection = perspective(55.0_f32.to_radians(), aspect.max(0.01), 0.1, 100.0);
+        let projection = perspective(55.0_f32.to_radians(), aspect.max(0.01), 0.1, 256.0);
         RenderView {
             view_projection: multiply(projection, view),
             viewport_width: width.max(1),
             viewport_height: height.max(1),
             near_plane: 0.1,
-            far_plane: 100.0,
+            far_plane: 256.0,
         }
     }
 

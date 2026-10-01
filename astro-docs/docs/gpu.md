@@ -113,7 +113,7 @@ The Linux and Windows PALs expose the same compute resource ABI and command
 ordering: descriptor set layout, descriptor pool/set allocation, compute
 pipeline layout, compute pipeline creation, dispatch, compute-to-compute and
 compute-to-indirect barriers, and indexed indirect draw recording. The live
-voxel presenter still uses CPU extraction while per-frame buffer ownership and
+voxel presenter still uses CPU greedy meshing while per-frame buffer ownership and
 descriptor updates are integrated; compute modules are not yet claimed as
 active GPU culling.
 

@@ -1,0 +1,58 @@
+name: native sanitizers
+on:
+  pull_request:
+    paths: ["native/**", "src/native_accel.rs", "tests/native_differential.rs", "build.rs", "Cargo.*", ".github/workflows/native-*.yml"]
+  push:
+    branches: ["**"]
+    paths: ["native/**", "src/native_accel.rs", "tests/native_differential.rs", "build.rs", "Cargo.*", ".github/workflows/native-*.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-sanitizers-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  c-sanitizers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+      - name: Instrument C and run deterministic cases
+        run: |
+          mkdir -p target/native-sanitizers
+          clang -std=c11 -O1 -g -Wall -Wextra -Werror -fno-omit-frame-pointer \
+            -fsanitize=address,undefined -fno-sanitize-recover=all -DRKE_STANDALONE \
+            -Inative/include native/src/batch_transform.c native/tests/fuzz_batches.c \
+            -lm -o target/native-sanitizers/cases
+          target/native-sanitizers/cases
+      - name: Fuzz instrumented C kernels
+        run: |
+          clang -std=c11 -O1 -g -Wall -Wextra -Werror -fno-omit-frame-pointer \
+            -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all \
+            -Inative/include native/src/batch_transform.c native/tests/fuzz_batches.c \
+            -lm -o target/native-sanitizers/fuzz
+          target/native-sanitizers/fuzz -max_total_time=60 -timeout=5 -max_len=1024 \
+            -artifact_prefix=target/native-sanitizers/
+      - name: Rust wrappers calling UBSan-instrumented C
+        env:
+          CC: gcc
+          RKE_NATIVE_UBSAN: "1"
+          CARGO_TARGET_DIR: target/native-ubsan
+          RUSTFLAGS: "-D warnings"
+        run: cargo test --locked --test native_differential --features native-accel
+      - name: Upload sanitizer artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-sanitizer-failure
+          path: target/native-sanitizers/
+          retention-days: 7
+          if-no-files-found: ignore

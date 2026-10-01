@@ -18,19 +18,35 @@ impl VoxelDriver {
     }
 
     pub fn tick(&mut self, seconds: f32) {
-        let speed = 8.0;
+        let speed = 8.0 / self.forward.hypot(self.strafe).max(1.0);
         self.world.player.position[0] += self.strafe * speed * seconds;
         self.world.player.position[2] += self.forward * speed * seconds;
         self.world.player.velocity[1] -= 18.0 * seconds;
         self.world.player.position[1] += self.world.player.velocity[1] * seconds;
-        if self.world.player.position[1] < 4.0 {
-            self.world.player.position[1] = 4.0;
+        // Keep f32 world coordinates precise; streaming is bounded, not infinite.
+        let half = if self.world.stream_radius == 0 {
+            self.world.side() as f32 * 0.5
+        } else {
+            65_000.0
+        };
+        self.world.player.position[0] = self.world.player.position[0].clamp(-half, half - 0.01);
+        self.world.player.position[2] = self.world.player.position[2].clamp(-half, half - 0.01);
+        let floor = self
+            .world
+            .floor_at(self.world.player.position[0], self.world.player.position[2]);
+        if self.world.player.position[1] < floor {
+            self.world.player.position[1] = floor;
             self.world.player.velocity[1] = 0.0;
         }
     }
 
     pub fn jump(&mut self) {
-        if self.world.player.position[1] <= 4.01 {
+        if self.world.player.position[1]
+            <= self
+                .world
+                .floor_at(self.world.player.position[0], self.world.player.position[2])
+                + 0.01
+        {
             self.world.player.velocity[1] = 7.0;
         }
     }

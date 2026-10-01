@@ -59,7 +59,13 @@ The project follows this priority order:
   `ui.vert`/`ui.frag`) plus compute shaders for frustum culling and indirect
   command generation. Both Linux and Windows PALs expose matching compute
   pipeline, descriptor, barrier, dispatch, and indirect-draw contracts.
-- The current voxel presenter uses CPU extraction and GPU graphics upload. The
+- The voxel example runs on Windows and Linux/X11, with cached chunk-local greedy
+  meshing, hidden-face removal, and separate terrain materials. The default finite world
+  reports solid blocks, exposed faces, merged quads, and upload bytes separately.
+  Unchanged terrain stays GPU-resident; camera updates do not re-upload geometry.
+  `RKE_GPU_STRESS_TARGET_FPS` selects 60/120 FPS pacing or `0` for no CPU cap,
+  with live window-title counters (not GPU timestamp measurements).
+- The current voxel presenter uses CPU meshing and GPU graphics upload. The
   compute shaders are compiled and validated, but their descriptor/buffer
   lifetime is not yet enabled in the live example frame owner.
 - The composition root defaults to headless mode. On Windows, set `RUST_KERNEL_NATIVE_VULKAN=1` to try the native Win32/Vulkan bootstrap; unavailable native setup falls back to the headless renderer.
@@ -139,10 +145,18 @@ cargo run --release --example gpu_stress_3d
 
 Controls are `WASD` to move, `Space` to jump, mouse drag to orbit the camera,
 `H` to regenerate terrain, `N` to reset the player/camera, and `Esc` to exit.
-The block count is capped by the current frame upload capacity; larger worlds
-will require chunk streaming instead of one monolithic upload.
+Set `RKE_GPU_STRESS_STREAM_RADIUS=1`–`4` for bounded procedural streaming instead
+of the finite block-count scene. It retains up to 81 chunks, builds at most two
+per frame, and evicts distant chunks. Changed residency still repacks/uploads the
+whole active mesh within a 4 MiB budget; per-chunk GPU uploads are not implemented.
 
 ## Native performance path
+
+Native correctness compares transform, culling, normals and AABB with checked
+Rust baselines. Dedicated workflows cover GCC/Clang, Windows fallback,
+instrumented C and bounded fuzzing. Criterion labels the actual backend and
+includes 48 cases; Windows fallback is never reported as C.
+See [native validation](native/README.md) for commands and input contracts.
 
 The optional `native-accel` feature provides batch CPU transform and frustum
 culling through a small C ABI. Linux builds use the C implementation; Windows

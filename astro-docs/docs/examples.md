@@ -82,8 +82,9 @@ native Vulkan presentation, GPU frame timing, and the 18M/60/120 milestones.
 
 `gpu_stress_3d` is a separate Minecraft-style voxel renderer; it does not reuse
 Rubik state or layer-turn logic. It generates height-mapped block terrain,
-extracts one mesh instance per block, and presents the world through the native
-Vulkan path on Windows. The player state has gravity, jumping, and bounded WASD
+removes hidden faces across chunk boundaries, greedily merges same-material
+surfaces inside 16×16×16 chunks, and caches the mesh until its seed or budget changes.
+It presents through native Vulkan on Windows and Linux/X11. The player state has gravity, jumping, and bounded WASD
 movement, while the orbit camera follows the player.
 
 ```powershell
@@ -103,9 +104,62 @@ Controls:
 | N | Reset player and camera |
 | Escape | Close the window |
 
-The example validates all six generated shader artifacts at startup. The UI and
-world graphics shaders are loaded by the native presentation path. The compute
+The example prints all six generated shader artifacts at startup; inventory does
+not imply execution. Terrain uses world graphics shaders with a dedicated solid
+material flag; Windows help uses GDI. The compute
 shader modules and matching Linux/Windows Vulkan descriptor, pipeline, barrier,
 dispatch, and indirect-draw contracts are implemented, but live compute
 buffer ownership remains a follow-up before the example switches from CPU
-extraction to GPU culling.
+meshing to GPU culling.
+
+Linux requires X11/XWayland, a Vulkan driver and `glslc`:
+
+```sh
+RKE_REQUIRE_GLSLC=1 RKE_GPU_STRESS_BLOCKS=100000 RKE_GPU_STRESS_MAX_FRAMES=600 \
+  cargo run --release --example gpu_stress_3d
+```
+
+The default scene is finite terrain. The block setting is
+approximate. Console counters distinguish actual blocks, exposed faces, greedy
+quads, draw calls and upload bytes. The upload cap is 4 MiB. Geometry uploads only
+when the mesh changes; camera frames update push constants. Shared GPU buffers
+and depth are serialized for correctness. Window-title statistics and final
+console counters distinguish resident mesh size from cumulative transferred bytes.
+
+`RKE_GPU_STRESS_TARGET_FPS` selects a CPU pacing cap: `60` (default), `120`, or `0`
+for no CPU pacing. Presentation can still synchronize to the display. FPS includes
+CPU work, presentation and any help overlay, not isolated GPU timing.
+
+`cargo test --example gpu_stress_3d` checks material boundaries, cache reuse,
+upload bounds, and surface area against a brute-force face reference.
+
+### Streaming mode
+
+Set `RKE_GPU_STRESS_STREAM_RADIUS=1`–`4` (default `0` disables streaming).
+It replaces the finite block budget with a resident square of `(2*r+1)^2`
+16×16×16 chunk columns, at most 81 chunks. Only two missing chunks are meshed
+per frame, nearest first. Out-of-range chunks are evicted and retained chunks
+are reused. The title and console show resident/pending counts.
+
+```powershell
+$env:RKE_GPU_STRESS_STREAM_RADIUS = "4"
+$env:RKE_GPU_STRESS_MAX_FRAMES = "3600"
+cargo run --release --example gpu_stress_3d
+```
+
+```sh
+RKE_GPU_STRESS_STREAM_RADIUS=4 RKE_GPU_STRESS_MAX_FRAMES=3600 \
+  cargo run --release --example gpu_stress_3d
+```
+
+Neighbor sampling crosses chunk boundaries and handles negative coordinates.
+`H` rebuilds the resident set incrementally; returning to an evicted area is
+deterministic. World X/Z positions are bounded near ±65,000 for f32 precision.
+Chunk arrival can be visible: there are no terrain skirts or background jobs.
+
+The 4 MiB residency/upload bounds remain in force. Each residency change repacks
+the complete active mesh into six directional batches and uploads it once;
+GPU subrange updates, persistent edits, LOD and live compute culling are not
+implemented. This is bounded streaming, not an infinite-world implementation.
+Tests cover work budgets, eviction, negative boundaries, teleports, regeneration,
+returning to an area, and seam faces against global terrain sampling.

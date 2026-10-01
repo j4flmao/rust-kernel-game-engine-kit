@@ -112,6 +112,7 @@ pub struct PresentEngine {
     ui_upload: Vec<u8>,
     ui_draw_commands: Vec<crate::subsystems::renderer::UiDrawCommand>,
     world_upload: Vec<u8>,
+    world_transfer: crate::platform::world_upload::UploadState,
     world_view_projection: [f32; 16],
     world_draw_commands: Vec<crate::subsystems::renderer::WorldDrawCommand>,
     physical: VkPhysicalDevice,
@@ -342,6 +343,13 @@ struct FrameState {
 // scheduler thread; raw handles are never shared across threads.
 unsafe impl Send for PresentEngine {}
 
+impl Drop for PresentEngine {
+    fn drop(&mut self) {
+        // SAFETY: stop GPU use before field destructors release pipelines and targets.
+        let _ = unsafe { self._device.wait_idle(&self.loader) };
+    }
+}
+
 impl PresentEngine {
     /// Brings up the full native present path against `handles`.
     pub fn build(
@@ -493,6 +501,7 @@ impl PresentEngine {
             ui_upload: Vec::new(),
             ui_draw_commands: Vec::new(),
             world_upload: Vec::new(),
+            world_transfer: Default::default(),
             world_view_projection: [0.0; 16],
             world_draw_commands: Vec::new(),
             physical,
@@ -585,30 +594,22 @@ impl PresentEngine {
         view_projection: [f32; 16],
         commands: &[crate::subsystems::renderer::WorldDrawCommand],
     ) -> Result<(), PresentError> {
-        if u64::try_from(bytes.len()).map_err(|_| PresentError::AllocationFailed)?
-            > WORLD_UPLOAD_CAPACITY
-            || bytes.is_empty()
-            || !view_projection.iter().all(|value| value.is_finite())
-            || commands.is_empty()
-            || commands.iter().any(|command| {
-                command.vertex_count == 0
-                    || command.instance_count == 0
-                    || command
-                        .first_vertex
-                        .checked_add(command.vertex_count)
-                        .is_none_or(|end| end > 36)
-            })
-        {
+        if !crate::platform::world_upload::valid_world_packet(
+            bytes,
+            WORLD_UPLOAD_CAPACITY,
+            &view_projection,
+            commands,
+        ) {
             return Err(PresentError::AllocationFailed);
         }
         self.world_upload
-            .try_reserve(bytes.len().saturating_sub(self.world_upload.capacity()))
+            .try_reserve(bytes.len().saturating_sub(self.world_upload.len()))
             .map_err(|_| PresentError::AllocationFailed)?;
         self.world_draw_commands
             .try_reserve(
                 commands
                     .len()
-                    .saturating_sub(self.world_draw_commands.capacity()),
+                    .saturating_sub(self.world_draw_commands.len()),
             )
             .map_err(|_| PresentError::AllocationFailed)?;
         self.world_upload.clear();
@@ -616,7 +617,21 @@ impl PresentEngine {
         self.world_view_projection = view_projection;
         self.world_draw_commands.clear();
         self.world_draw_commands.extend_from_slice(commands);
+        self.world_transfer.invalidate();
         Ok(())
+    }
+
+    /// Change camera push constants without copying or uploading geometry.
+    pub fn set_world_camera(&mut self, view_projection: [f32; 16]) -> Result<(), PresentError> {
+        if !view_projection.iter().all(|v| v.is_finite()) {
+            return Err(PresentError::AllocationFailed);
+        }
+        self.world_view_projection = view_projection;
+        Ok(())
+    }
+
+    pub fn world_upload_stats(&self) -> crate::platform::world_upload::WorldUploadStats {
+        self.world_transfer.stats()
     }
 
     pub const fn ui_upload_size(&self) -> usize {
@@ -631,10 +646,14 @@ impl PresentEngine {
         if !self.world_upload.is_empty() && self.world_pipeline.is_none() {
             return Err(PresentError::Vulkan(VulkanLoaderError::InvalidQueuePlan));
         }
+        // Upload buffers and the depth target are shared by frame slots.
+        // Serialize their reuse until these resources become per-frame.
+        for pending in &self.frames {
+            pending.fence.wait(UINT64_MAX)?;
+        }
         let frame_index = self.image_index as usize % self.frames.len();
         let frame = &self.frames[frame_index];
         frame.fence.wait(UINT64_MAX)?;
-        frame.fence.reset()?;
 
         // SAFETY: handles belong to this live swapchain/device.
         let image = match unsafe {
@@ -647,41 +666,47 @@ impl PresentEngine {
         };
         self.image_index = self.image_index.wrapping_add(1);
 
+        let mut world_rendered = false;
         // SAFETY: the buffer belongs to this engine's pool/device.
         unsafe {
-            let mut world_rendered = false;
             vulkan::reset_command_buffer(&self.loader, frame.buffer)?;
             vulkan::begin_command_buffer(&self.loader, frame.buffer)?;
             if !self.world_upload.is_empty()
                 && self.world_pipeline.is_some()
                 && self.ui_upload.is_empty()
             {
-                self.world_staging
-                    .write_host_visible(&self.loader, 0, &self.world_upload, 256)?;
-                vulkan::cmd_copy_buffer_device(
-                    &self.loader,
-                    self._device.raw(),
-                    frame.buffer,
-                    self.world_staging.raw(),
-                    self.world_device.raw(),
-                    0,
-                    0,
-                    u64::try_from(self.world_upload.len())
-                        .map_err(|_| VulkanLoaderError::InvalidQueuePlan)?,
-                )?;
-                vulkan::cmd_buffer_barrier_device(
-                    &self.loader,
-                    self._device.raw(),
-                    frame.buffer,
-                    self.world_device.raw(),
-                    0,
-                    u64::try_from(self.world_upload.len())
-                        .map_err(|_| VulkanLoaderError::InvalidQueuePlan)?,
-                    VK_PIPELINE_STAGE_TRANSFER_BIT,
-                    VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-                    VK_ACCESS_TRANSFER_WRITE_BIT,
-                    VK_ACCESS_SHADER_READ_BIT,
-                )?;
+                if self.world_transfer.pending() {
+                    self.world_staging.write_host_visible(
+                        &self.loader,
+                        0,
+                        &self.world_upload,
+                        256,
+                    )?;
+                    vulkan::cmd_copy_buffer_device(
+                        &self.loader,
+                        self._device.raw(),
+                        frame.buffer,
+                        self.world_staging.raw(),
+                        self.world_device.raw(),
+                        0,
+                        0,
+                        u64::try_from(self.world_upload.len())
+                            .map_err(|_| VulkanLoaderError::InvalidQueuePlan)?,
+                    )?;
+                    vulkan::cmd_buffer_barrier_device(
+                        &self.loader,
+                        self._device.raw(),
+                        frame.buffer,
+                        self.world_device.raw(),
+                        0,
+                        u64::try_from(self.world_upload.len())
+                            .map_err(|_| VulkanLoaderError::InvalidQueuePlan)?,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+                        VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_ACCESS_SHADER_READ_BIT,
+                    )?;
+                }
                 let pipeline = self
                     .world_pipeline
                     .as_ref()
@@ -800,6 +825,7 @@ impl PresentEngine {
         }
         // SAFETY: all handles belong to the same live device.
         unsafe {
+            frame.fence.reset()?;
             self._device.queue_submit(
                 &self.loader,
                 self.queue,
@@ -808,6 +834,9 @@ impl PresentEngine {
                 frame.render_done.raw(),
                 frame.fence.raw(),
             )?;
+            if world_rendered {
+                self.world_transfer.submitted(self.world_upload.len());
+            }
         }
         // SAFETY: handles belong to this live swapchain/device.
         match unsafe {
@@ -822,6 +851,10 @@ impl PresentEngine {
 
     /// Rebuilds the swapchain (typically after `OutOfDate` from a resize).
     pub fn recreate(&mut self, size: PresentSize) -> Result<(), PresentError> {
+        // SAFETY: presentation owns and drives all device queues on this thread.
+        unsafe {
+            self._device.wait_idle(&self.loader)?;
+        }
         // `_device.raw()` is a VkDevice, not a VkPhysicalDevice. Passing it to
         // surface-capability queries corrupts the Vulkan call boundary during
         // maximize/resize and can terminate the process on Windows.

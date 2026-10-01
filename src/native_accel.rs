@@ -3,6 +3,12 @@
 //! The public API is safe and checks slice sizes before crossing the C ABI.
 //! The feature is intentionally opt-in so the engine always has a pure-Rust
 //! fallback and does not require a native toolchain for normal builds.
+//!
+//! # Input contract
+//! All inputs must be finite and packed at the documented element stride.
+//! Sphere radii must be nonnegative; triangle indices must reference existing
+//! vertices. Invalid inputs panic before FFI. Finite values can still overflow
+//! intermediate arithmetic; these functions do not promise finite outputs.
 #![allow(unsafe_code)] // Checked slice wrappers own the native C FFI boundary.
 
 #[cfg(all(target_family = "unix", feature = "native-accel"))]
@@ -37,6 +43,8 @@ unsafe extern "C" {
 pub fn batch_transform_xyz(input: &[f32], output: &mut [f32], matrix_3x4: &[f32; 12]) {
     assert!(input.len().is_multiple_of(3));
     assert_eq!(input.len(), output.len());
+    require_finite(input);
+    require_finite(matrix_3x4);
     let count = u32::try_from(input.len() / 3).expect("native batch is too large");
 
     #[cfg(all(target_family = "unix", feature = "native-accel"))]
@@ -82,6 +90,13 @@ pub const fn backend_name() -> &'static str {
 pub fn batch_cull_spheres(spheres_xyzw: &[f32], planes_xyzd: &[f32; 24], visible: &mut [u8]) {
     assert!(spheres_xyzw.len().is_multiple_of(4));
     assert_eq!(spheres_xyzw.len() / 4, visible.len());
+    require_finite(spheres_xyzw);
+    require_finite(planes_xyzd);
+    assert!(spheres_xyzw
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .all(|sphere| sphere[3] >= 0.0));
     let count = u32::try_from(visible.len()).expect("native culling batch is too large");
 
     #[cfg(all(target_family = "unix", feature = "native-accel"))]
@@ -108,13 +123,13 @@ pub fn generate_vertex_normals(positions_xyz: &[f32], indices: &[u32], normals_x
     assert!(positions_xyz.len().is_multiple_of(3));
     assert!(indices.len().is_multiple_of(3));
     assert_eq!(positions_xyz.len(), normals_xyz.len());
-    assert!(indices
-        .iter()
-        .all(|index| *index < positions_xyz.len() as u32 / 3));
+    require_finite(positions_xyz);
     let vertex_count = u32::try_from(normals_xyz.len() / 3).expect("mesh is too large");
+    assert!(indices.iter().all(|index| *index < vertex_count));
     let index_count = u32::try_from(indices.len()).expect("index buffer is too large");
 
     #[cfg(all(target_family = "unix", feature = "native-accel"))]
+    // SAFETY: packed lengths, index bounds and distinct output are checked above.
     unsafe {
         rke_generate_vertex_normals(
             positions_xyz.as_ptr(),
@@ -134,10 +149,12 @@ pub fn calculate_aabb(positions_xyz: &[f32]) -> Option<([f32; 3], [f32; 3])> {
         return None;
     }
     assert!(positions_xyz.len().is_multiple_of(3));
+    require_finite(positions_xyz);
     let count = u32::try_from(positions_xyz.len() / 3).expect("mesh is too large");
     let mut min_xyz = [0.0; 3];
     let mut max_xyz = [0.0; 3];
     #[cfg(all(target_family = "unix", feature = "native-accel"))]
+    // SAFETY: non-empty packed input and distinct three-float output arrays.
     unsafe {
         rke_calculate_aabb(
             positions_xyz.as_ptr(),
@@ -160,7 +177,6 @@ pub fn calculate_aabb(positions_xyz: &[f32]) -> Option<([f32; 3], [f32; 3])> {
     Some((min_xyz, max_xyz))
 }
 
-#[cfg(not(all(target_family = "unix", feature = "native-accel")))]
 fn rust_generate_vertex_normals(positions: &[f32], indices: &[u32], normals: &mut [f32]) {
     normals.fill(0.0);
     for triangle in indices.as_chunks::<3>().0 {
@@ -198,7 +214,6 @@ fn rust_generate_vertex_normals(positions: &[f32], indices: &[u32], normals: &mu
     }
 }
 
-#[cfg(not(all(target_family = "unix", feature = "native-accel")))]
 fn rust_batch_cull_spheres(
     spheres_xyzw: &[f32],
     planes_xyzd: &[f32; 24],
@@ -265,5 +280,75 @@ mod tests {
             calculate_aabb(&positions),
             Some(([0.0, 0.0, 0.0], [1.0, 1.0, 0.0]))
         );
+    }
+}
+fn require_finite(values: &[f32]) {
+    assert!(
+        values.iter().all(|value| value.is_finite()),
+        "native input must be finite"
+    );
+}
+
+/// Checked scalar Rust baselines for differential tests and benchmarks.
+pub mod reference {
+    use super::{require_finite, rust_batch_cull_spheres, rust_generate_vertex_normals};
+    pub fn batch_transform_xyz(input: &[f32], output: &mut [f32], matrix: &[f32; 12]) {
+        assert!(input.len().is_multiple_of(3));
+        assert_eq!(input.len(), output.len());
+        let _count = u32::try_from(input.len() / 3).expect("native batch is too large");
+        require_finite(input);
+        require_finite(matrix);
+        for (point, out) in input
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .zip(output.as_chunks_mut::<3>().0)
+        {
+            for row in 0..3 {
+                let m = &matrix[row * 4..row * 4 + 4];
+                out[row] = m[0] * point[0] + m[1] * point[1] + m[2] * point[2] + m[3];
+            }
+        }
+    }
+    pub fn batch_cull_spheres(spheres: &[f32], planes: &[f32; 24], visible: &mut [u8]) {
+        assert!(spheres.len().is_multiple_of(4));
+        assert_eq!(spheres.len() / 4, visible.len());
+        require_finite(spheres);
+        require_finite(planes);
+        assert!(spheres
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|sphere| sphere[3] >= 0.0));
+        let count = u32::try_from(visible.len()).expect("native culling batch is too large");
+        rust_batch_cull_spheres(spheres, planes, visible, count);
+    }
+    pub fn generate_vertex_normals(positions: &[f32], indices: &[u32], normals: &mut [f32]) {
+        assert!(positions.len().is_multiple_of(3));
+        assert!(indices.len().is_multiple_of(3));
+        assert_eq!(positions.len(), normals.len());
+        require_finite(positions);
+        let count = u32::try_from(positions.len() / 3).expect("mesh is too large");
+        let _index_count = u32::try_from(indices.len()).expect("index buffer is too large");
+        assert!(indices.iter().all(|index| *index < count));
+        rust_generate_vertex_normals(positions, indices, normals);
+    }
+    pub fn calculate_aabb(positions: &[f32]) -> Option<([f32; 3], [f32; 3])> {
+        if positions.is_empty() {
+            return None;
+        }
+        assert!(positions.len().is_multiple_of(3));
+        let _count = u32::try_from(positions.len() / 3).expect("mesh is too large");
+        require_finite(positions);
+        let points = positions.as_chunks::<3>().0;
+        let mut min = points[0];
+        let mut max = min;
+        for point in points.iter().skip(1) {
+            for axis in 0..3 {
+                min[axis] = min[axis].min(point[axis]);
+                max[axis] = max[axis].max(point[axis]);
+            }
+        }
+        Some((min, max))
     }
 }

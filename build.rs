@@ -4,6 +4,9 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=CC");
+    println!("cargo:rerun-if-env-changed=AR");
+    println!("cargo:rerun-if-env-changed=RKE_NATIVE_UBSAN");
     println!("cargo:rerun-if-changed=native/src/batch_transform.c");
     println!("cargo:rerun-if-changed=native/include/rke_native.h");
     if env::var_os("CARGO_FEATURE_NATIVE_ACCEL").is_some()
@@ -73,23 +76,32 @@ fn compile_native_accel() {
     let object = out_dir.join("rke_batch_transform.o");
     let archive = out_dir.join("librke_native.a");
     let compiler = env::var("CC").unwrap_or_else(|_| "cc".to_owned());
-    let status = Command::new(compiler)
-        .args([
-            "-O3",
-            "-fPIC",
-            "-std=c11",
-            "-I",
-            "native/include",
-            "-c",
-            "native/src/batch_transform.c",
-            "-o",
-        ])
-        .arg(&object)
+    let mut command = Command::new(compiler);
+    command.args([
+        "-O3",
+        "-fPIC",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I",
+        "native/include",
+        "-c",
+        "native/src/batch_transform.c",
+        "-o",
+    ]);
+    command.arg(&object);
+    if env::var_os("RKE_NATIVE_UBSAN").is_some() {
+        // GCC's UBSan runtime is linked into the Rust test executable as well.
+        command.args(["-fsanitize=undefined", "-fno-sanitize-recover=all"]);
+        println!("cargo:rustc-link-lib=ubsan");
+    }
+    let status = command
         .status()
         .expect("failed to invoke C compiler for native-accel");
     assert!(status.success(), "native-accel C compilation failed");
-    let status = Command::new("ar")
-        .args(["crus"])
+    let status = Command::new(env::var("AR").unwrap_or_else(|_| "ar".to_owned()))
+        .args(["crs"])
         .arg(&archive)
         .arg(&object)
         .status()
